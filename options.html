@@ -34,7 +34,7 @@
             <input type="radio" name="zipMode" value="true" id="zipModeTrue" checked>
             <div class="radio-content">
               <strong>Single ZIP Archive (Recommended)</strong>
-              <span>Compresses all course materials, folders, and notes into a clean, streaming <code>[Course_Name].zip</code>.</span>
+              <span>Streams all materials directly into an organized <code>[Course_Name].zip</code> preserving folder hierarchy.</span>
             </div>
           </label>
           <label class="radio-card">
@@ -56,32 +56,32 @@
           <label class="checkbox-item">
             <input type="checkbox" id="typeFiles" checked>
             <div>
-              <strong>Files & Attachments</strong>
-              <span>Lecture slides, PDFs, Word docs, spreadsheets, code files, and ZIPs.</span>
+              <strong>Original Course Files (Recommended)</strong>
+              <span>Download the exact files uploaded by professors: PDFs, PowerPoint slides (.pptx/.ppt), Word documents (.docx/.doc), Excel sheets, and ZIP archives.</span>
             </div>
           </label>
 
           <label class="checkbox-item">
-            <input type="checkbox" id="typePages" checked>
+            <input type="checkbox" id="typePages">
             <div>
-              <strong>Pages & Notes</strong>
-              <span>Instructor content descriptions, learning modules, and lecture notes.</span>
+              <strong>Text Notes & Descriptions</strong>
+              <span>Convert on-screen instructor text descriptions and learning modules into formatted Markdown/HTML notes (saved in <code>Course Notes/</code>).</span>
             </div>
           </label>
 
           <label class="checkbox-item">
-            <input type="checkbox" id="typeAnnouncements" checked>
+            <input type="checkbox" id="typeAnnouncements">
             <div>
               <strong>Course Announcements</strong>
-              <span>Instructor announcements exported into a clean document.</span>
+              <span>Export instructor announcements into an <code>Announcements/</code> file.</span>
             </div>
           </label>
 
           <label class="checkbox-item">
-            <input type="checkbox" id="typeGrades" checked>
+            <input type="checkbox" id="typeGrades">
             <div>
               <strong>Grades & Feedback</strong>
-              <span>Your grades exported as a spreadsheet (<code>Grades.csv</code>) and readable table.</span>
+              <span>Export your course grades as a spreadsheet (<code>Grades.csv</code>).</span>
             </div>
           </label>
         </div>
@@ -89,21 +89,13 @@
 
       <!-- Section: Export Formatting -->
       <section class="card">
-        <h2>Export & Filtering Options</h2>
-        <p class="section-desc">Customize text document format and media filtering.</p>
-
-        <div class="form-row">
-          <label for="exportFormat">Document Format:</label>
-          <select id="exportFormat" class="select-input">
-            <option value="md">Clean Markdown (.md) — Best for Obsidian, Notion, NotebookLM, AI</option>
-            <option value="html">Standalone Webpage (.html) — Formatted with styling</option>
-          </select>
-        </div>
+        <h2>File Filters & Options</h2>
+        <p class="section-desc">Customize folder organization and file exclusions.</p>
 
         <div class="form-row checkbox-row">
           <label class="inline-checkbox">
             <input type="checkbox" id="excludeVideos">
-            <span><strong>Exclude video files</strong> (.mp4, .mov, etc.) to keep archives compact and save bandwidth.</span>
+            <span><strong>Exclude large video files</strong> (.mp4, .mov, .avi) to keep downloads fast and save disk space.</span>
           </label>
         </div>
 
@@ -111,6 +103,14 @@
           <label for="folderPrefix">Download Folder Prefix (optional):</label>
           <input type="text" id="folderPrefix" class="text-input" placeholder="e.g. University_2026">
           <span class="help-text">Prepends a folder name to your downloads for clean semester organization.</span>
+        </div>
+
+        <div class="form-row">
+          <label for="exportFormat">Document Format for Notes/Announcements:</label>
+          <select id="exportFormat" class="select-input">
+            <option value="md">Markdown (.md) — For Obsidian, Notion, NotebookLM, AI</option>
+            <option value="html">Standalone Webpage (.html)</option>
+          </select>
         </div>
       </section>
     </main>

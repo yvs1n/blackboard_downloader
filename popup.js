@@ -3,7 +3,7 @@
  */
 
 const CONTENT_TYPE_LABELS = {
-  files: "Files & Slides",
+  files: "Course Materials & Slides",
   pages: "Pages & Notes",
   announcements: "Announcements",
   grades: "Grades"
@@ -25,9 +25,9 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.runtime.openOptionsPage();
   });
 
-  // Load configured content types
+  // Load configured content types (Files = true by default, others false)
   chrome.storage.sync.get({
-    contentTypes: { files: true, pages: true, announcements: true, grades: true }
+    contentTypes: { files: true, pages: false, announcements: false, grades: false }
   }, (settings) => {
     for (const [key, label] of Object.entries(CONTENT_TYPE_LABELS)) {
       const tag = document.createElement("span");
@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
         courseInfo.style.display = "block";
         courseNameEl.textContent = name;
 
-        downloadBtnLabel.textContent = "Download course content";
+        downloadBtnLabel.textContent = "Download course files";
         downloadBtn.disabled = false;
 
         downloadBtn.addEventListener("click", () => {

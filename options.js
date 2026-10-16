@@ -20,9 +20,9 @@ document.addEventListener("DOMContentLoaded", () => {
     zipMode: true,
     contentTypes: {
       files: true,
-      pages: true,
-      announcements: true,
-      grades: true,
+      pages: false,
+      announcements: false,
+      grades: false,
     },
     exportFormat: "md",
     excludeVideos: false,
@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
       zipModeFalse.checked = true;
     }
 
-    typeFiles.checked = !!items.contentTypes.files;
+    typeFiles.checked = items.contentTypes.files !== false;
     typePages.checked = !!items.contentTypes.pages;
     typeAnnouncements.checked = !!items.contentTypes.announcements;
     typeGrades.checked = !!items.contentTypes.grades;

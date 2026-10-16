@@ -1,9 +1,9 @@
 /**
  * Blackboard Course Downloader — Download Orchestrator
  *
- * Manages user settings, gathers course files, text materials, announcements,
- * and grades, generates streaming ZIP archives (via client-zip), or hands off
- * individual downloads to the background worker.
+ * Manages user settings, gathers original course files uploaded by professors,
+ * extracts exact filenames from HTTP Content-Disposition headers, and streams
+ * them into a clean, organized ZIP archive (via client-zip).
  */
 
 // ---------------------------------------------------------------------------
@@ -12,17 +12,17 @@
 
 const SETTING_DEFAULTS = {
   contentTypes: {
-    files: true,
-    pages: true,
-    announcements: true,
-    grades: true,
+    files: true,          // Real course materials uploaded by professors (PDFs, PPTX, DOCX, etc.)
+    pages: false,         // Keep disabled so no .md clutter is generated
+    announcements: false, // Optional announcements export
+    grades: false,        // Optional gradebook export
   },
   conflictAction: "uniquify",
   folderPrefix: "",
   zipMode: true,
   excludeVideos: false,
   maxFileSizeMB: 0,
-  exportFormat: "md", // "md" or "html"
+  exportFormat: "md",
 };
 
 /**
@@ -63,7 +63,6 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
     for (const item of items) {
       if (activeAbortController.signal.aborted) return;
 
-      const fullPath = `${item.path}${item.filename}`;
       updateDownloadPanel({
         total: totalItems,
         completed,
@@ -78,8 +77,10 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
 
       try {
         let input;
+        let resolvedFilename = item.filename;
+
         if (item.data) {
-          // In-memory text/blob data (Markdown, HTML, CSV)
+          // Pre-generated text / CSV content
           if (typeof item.data === "string") {
             input = new TextEncoder().encode(item.data);
           } else {
@@ -88,9 +89,17 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
         } else if (item.url) {
           const res = await fetch(item.url, { signal: activeAbortController.signal });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          // Extract the exact filename from Content-Disposition headers
+          const headerName = extractFilenameFromHeaders(res.headers, item.filename);
+          if (headerName) {
+            resolvedFilename = headerName;
+          }
+
           input = res.body;
         }
 
+        const fullPath = `${item.path}${resolvedFilename}`;
         completed++;
         yield {
           name: fullPath,
@@ -125,7 +134,7 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
     console.error("[Blackboard Downloader] ZIP error:", err);
     updateDownloadPanel({
       total: totalItems, completed, failed, queued: 0, downloading: 0,
-      currentFile: "ZIP generation error — see console", failedFiles, done: true, cancelled: false,
+      currentFile: "ZIP error — see console", failedFiles, done: true, cancelled: false,
     });
     throw err;
   }
@@ -237,25 +246,25 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
   const types = settings.contentTypes;
   downloadCancelled = false;
 
-  onProgress("Initializing course content scan...");
+  onProgress("Scanning course contents and folders...");
 
   const allItems = [];
 
-  // 1. Fetch Course Content & Attachments
+  // 1. Fetch Course Files & Attachments (PDFs, Slides, Word docs, ZIPs, etc.)
   if (types.files || types.pages) {
-    onProgress("Scanning course contents and attachments...");
+    onProgress("Traversing course folders for files...");
     let { files, pages } = await fetchCourseContentTree(courseId, onProgress);
 
     // Fallback: If REST API returned nothing (disabled by university), use DOM scraper
-    if (files.length === 0 && pages.length === 0) {
-      onProgress("Checking on-screen files (fallback)...");
+    if (files.length === 0) {
+      onProgress("Checking visible course files (DOM fallback)...");
       const scraped = scrapeDomCourseFiles();
       files.push(...scraped);
     }
 
+    // Add real uploaded files
     if (types.files) {
       for (const f of files) {
-        // Size / Video filtering
         if (settings.excludeVideos) {
           const lower = f.filename.toLowerCase();
           if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".avi") || lower.endsWith(".mkv")) {
@@ -266,13 +275,14 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
       }
     }
 
-    if (types.pages) {
+    // Add page notes ONLY if explicitly requested in settings
+    if (types.pages && pages.length > 0) {
       for (const p of pages) {
         const content = settings.exportFormat === "html" ? p.html : htmlToMarkdown(p.html, p.title);
         const ext = settings.exportFormat === "html" ? ".html" : ".md";
         allItems.push({
           filename: `${sanitizeFilename(p.title)}${ext}`,
-          path: p.path,
+          path: `${p.path}Course Notes/`,
           data: content,
           source: "page-content"
         });
@@ -280,7 +290,7 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
     }
   }
 
-  // 2. Fetch Announcements
+  // 2. Fetch Announcements (optional)
   if (types.announcements) {
     onProgress("Fetching announcements...");
     const announcements = await fetchCourseAnnouncements(courseId);
@@ -308,7 +318,7 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
     }
   }
 
-  // 3. Fetch Grades
+  // 3. Fetch Grades (optional)
   if (types.grades) {
     onProgress("Fetching grades...");
     const { columns, userGrades } = await fetchCourseGrades(courseId);
@@ -332,11 +342,11 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
   }
 
   if (allItems.length === 0) {
-    showToast("No downloadable files or contents found for this course.", "info");
+    showToast("No course materials or files found in this course.", "info");
     return { cancelled: false, count: 0 };
   }
 
-  onProgress(`Found ${allItems.length} items. Starting download...`);
+  onProgress(`Found ${allItems.length} files. Starting download...`);
 
   if (settings.zipMode) {
     return await downloadAsZip(allItems, courseName, settings, onProgress);

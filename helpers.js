@@ -1,9 +1,102 @@
 /**
  * Blackboard Course Downloader — Pure Utility Helpers
  *
- * Stateless utility functions for sanitization, formatting, HTML cleaning,
- * and Markdown/CSV export.
+ * Stateless utility functions for sanitization, formatting, MIME detection,
+ * Content-Disposition header extraction, and file management.
  */
+
+// ---------------------------------------------------------------------------
+// MIME Type to File Extension Mapping
+// ---------------------------------------------------------------------------
+
+const MIME_MAP = {
+  "application/pdf": ".pdf",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow": ".ppsx",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/x-rar-compressed": ".rar",
+  "application/x-7z-compressed": ".7z",
+  "application/x-tar": ".tar",
+  "application/gzip": ".gz",
+  "application/json": ".json",
+  "text/plain": ".txt",
+  "text/csv": ".csv",
+  "text/html": ".html",
+  "text/markdown": ".md",
+  "text/x-python": ".py",
+  "application/x-python-code": ".py",
+  "text/x-java-source": ".java",
+  "text/x-c": ".c",
+  "text/x-c++": ".cpp",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/gif": ".gif",
+  "image/svg+xml": ".svg",
+  "image/webp": ".webp",
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/x-msvideo": ".avi",
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav"
+};
+
+/**
+ * Maps a MIME type string to a common file extension.
+ */
+function mimeToExt(mime = "") {
+  if (!mime) return "";
+  const clean = mime.split(";")[0].trim().toLowerCase();
+  return MIME_MAP[clean] || "";
+}
+
+/**
+ * Extracts the real uploaded filename from the HTTP response headers
+ * (Content-Disposition), falling back to Content-Type extension if needed.
+ */
+function extractFilenameFromHeaders(headers, fallbackName = "file") {
+  if (!headers) return fallbackName;
+
+  // Retrieve Content-Disposition (case-insensitive in standard Headers object)
+  const cd = (typeof headers.get === "function" ? headers.get("content-disposition") : headers["content-disposition"]) || "";
+  let extracted = null;
+
+  if (cd) {
+    // 1. Try RFC 5987 filename*=UTF-8''filename.ext
+    const rfcMatch = cd.match(/filename\*=UTF-8''([^;\n]+)/i);
+    if (rfcMatch) {
+      try {
+        extracted = decodeURIComponent(rfcMatch[1]);
+      } catch {
+        extracted = rfcMatch[1];
+      }
+    }
+
+    // 2. Try standard filename="filename.ext" or filename=filename.ext
+    if (!extracted) {
+      const stdMatch = cd.match(/filename[^;=\n]*=([\'"]?)([^\'";\n]+)\1/i);
+      if (stdMatch && stdMatch[2]) {
+        extracted = stdMatch[2].trim();
+      }
+    }
+  }
+
+  let finalName = extracted || fallbackName;
+
+  // If the filename still lacks an extension, attempt to infer it from Content-Type
+  if (!finalName.includes(".")) {
+    const ct = (typeof headers.get === "function" ? headers.get("content-type") : headers["content-type"]) || "";
+    const ext = mimeToExt(ct);
+    if (ext) finalName += ext;
+  }
+
+  return sanitizeFilename(finalName);
+}
 
 // ---------------------------------------------------------------------------
 // String & Path Sanitization
@@ -78,14 +171,12 @@ function cleanBlackboardHtml(html) {
   const tpl = document.createElement("template");
   tpl.innerHTML = html;
 
-  // Remove empty paragraphs that only add unnecessary whitespace
   for (const p of [...tpl.content.querySelectorAll("p")]) {
     if (!p.textContent.trim() && !p.querySelector("img, br, hr, svg, video, iframe")) {
       p.remove();
     }
   }
 
-  // Unwrap redundant empty styling spans
   for (const span of [...tpl.content.querySelectorAll("span")]) {
     if (!span.querySelector("*") && !span.textContent.trim()) {
       span.replaceWith(document.createTextNode(span.textContent));
@@ -119,11 +210,10 @@ function htmlToMarkdown(html, title = "") {
       }
       return md + "\n";
     } catch (err) {
-      console.warn("[Blackboard Downloader] Turndown conversion failed, falling back to text:", err);
+      console.warn("[Blackboard Downloader] Turndown conversion error:", err);
     }
   }
 
-  // Fallback if Turndown is not loaded
   const tpl = document.createElement("template");
   tpl.innerHTML = cleaned;
   const text = tpl.content.textContent.trim();
@@ -140,7 +230,6 @@ function htmlToMarkdown(html, title = "") {
 function inferTerm(courseCode = "", fallback = "Current Term") {
   if (!courseCode) return fallback;
   
-  // Format: 26sprg, 25fall, 24sum1
   const m1 = courseCode.match(/(\d{2})(sprg|fall|sum[123]?|wtr|win)/i);
   if (m1) {
     const yy = m1[1];
@@ -158,7 +247,6 @@ function inferTerm(courseCode = "", fallback = "Current Term") {
     return `${semNames[sem] || sem.toUpperCase()} 20${yy}`;
   }
 
-  // Format: 2026_FA, 2025_SP, 2024_SU
   const m2 = courseCode.match(/(20\d{2})[-_](FA|SP|SU|WI|FALL|SPRING|SUMMER|WINTER)/i);
   if (m2) {
     const year = m2[1];
@@ -179,9 +267,6 @@ function inferTerm(courseCode = "", fallback = "Current Term") {
 // Grades Exporters
 // ---------------------------------------------------------------------------
 
-/**
- * Generates a clean CSV file from gradebook columns and user scores.
- */
 function exportGradesCsv(columns = [], userGrades = []) {
   const gradeMap = new Map();
   for (const g of userGrades) {
@@ -209,9 +294,6 @@ function exportGradesCsv(columns = [], userGrades = []) {
   return rows.map(r => r.join(",")).join("\n");
 }
 
-/**
- * Generates a Markdown document from gradebook columns and user scores.
- */
 function exportGradesMarkdown(columns = [], userGrades = [], courseName = "") {
   const gradeMap = new Map();
   for (const g of userGrades) {
@@ -236,14 +318,6 @@ function exportGradesMarkdown(columns = [], userGrades = [], courseName = "") {
   return md + "\n";
 }
 
-// ---------------------------------------------------------------------------
-// Pagination Helper
-// ---------------------------------------------------------------------------
-
-/**
- * Extracts the next page URL from Blackboard JSON response (paging.nextPage)
- * or RFC 5988 Link header.
- */
 function parsePaginationNext(data, linkHeader = null) {
   if (data?.paging?.nextPage) {
     return data.paging.nextPage;

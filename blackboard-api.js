@@ -2,25 +2,19 @@
  * Blackboard Course Downloader — Blackboard API Client
  *
  * Handles communication with Blackboard Learn REST API under the active
- * authenticated browser session. Supports retry with backoff, pagination,
- * recursive folder tree traversal, and DOM fallback.
+ * authenticated browser session. Recursively traverses all course containers,
+ * folders, learning modules, content attachments, WebDAV files, and DOM links.
  */
 
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 
-/**
- * Fetches a resource with timeout.
- */
 function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
-/**
- * Fetches with retry and exponential backoff for rate limits and transient errors.
- */
 async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -34,15 +28,12 @@ async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
     } catch (err) {
       if (attempt === retries) throw err;
       const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
-      console.warn(`[Blackboard Downloader] Network error on ${url}, retrying in ${delay}ms...`, err);
+      console.warn(`[Blackboard Downloader] Network error on ${url}, retrying in ${delay}ms...`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
 }
 
-/**
- * Fetches all pages for a paginated Blackboard endpoint using paging.nextPage.
- */
 async function fetchAllPages(url, options = {}) {
   const results = [];
   let next = url;
@@ -83,12 +74,37 @@ async function fetchAllPages(url, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Content Handler Inspection
+// ---------------------------------------------------------------------------
+
+function getHandlerId(item) {
+  if (!item) return "";
+  if (typeof item.contentHandler === "string") return item.contentHandler.toLowerCase();
+  if (typeof item.contentHandler === "object" && item.contentHandler !== null) {
+    return (item.contentHandler.id || "").toLowerCase();
+  }
+  return "";
+}
+
+function isContainerNode(item) {
+  if (!item) return false;
+  if (item.hasChildren === true) return true;
+  const hId = getHandlerId(item);
+  return (
+    hId.includes("folder") ||
+    hId.includes("lesson") ||
+    hId.includes("module") ||
+    hId.includes("blankpage") ||
+    hId.includes("courselink") ||
+    hId.includes("learningunit") ||
+    hId.includes("toc")
+  );
+}
+
+// ---------------------------------------------------------------------------
 // User & Course APIs
 // ---------------------------------------------------------------------------
 
-/**
- * Retrieves the currently logged-in user profile.
- */
 async function getCurrentUser() {
   const domain = window.location.origin;
   try {
@@ -104,9 +120,6 @@ async function getCurrentUser() {
   return null;
 }
 
-/**
- * Retrieves course details (name, course code, term, description).
- */
 async function fetchCourseDetails(courseId) {
   const domain = window.location.origin;
   try {
@@ -122,9 +135,6 @@ async function fetchCourseDetails(courseId) {
   return null;
 }
 
-/**
- * Fetches all courses the current user is enrolled in.
- */
 async function fetchAllCourses() {
   const domain = window.location.origin;
   const user = await getCurrentUser();
@@ -175,19 +185,20 @@ async function fetchAllCourses() {
 }
 
 // ---------------------------------------------------------------------------
-// Course Content & File Extraction
+// Course Content & Real Material Extraction
 // ---------------------------------------------------------------------------
 
 const COMMON_DOC_EXTS = new Set([
-  ".pdf", ".ppt", ".pptx", ".doc", ".docx", ".xls", ".xlsx",
+  ".pdf", ".ppt", ".pptx", ".ppsx", ".doc", ".docx", ".xls", ".xlsx",
   ".txt", ".csv", ".zip", ".rar", ".7z", ".tar", ".gz",
   ".py", ".java", ".cpp", ".c", ".h", ".cs", ".js", ".ts",
-  ".html", ".css", ".json", ".xml", ".sql", ".r", ".ipynb",
-  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".mp3", ".wav", ".mp4", ".mov"
+  ".html", ".css", ".json", ".xml", ".sql", ".r", ".ipynb", ".mat", ".m",
+  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+  ".mp3", ".wav", ".mp4", ".mov", ".avi", ".mkv"
 ]);
 
 /**
- * Extracts downloadable links embedded within rich-text Blackboard HTML.
+ * Extracts real uploaded file links embedded within rich-text Blackboard HTML.
  */
 function extractLinksFromBody(bodyHtml, currentPath, courseDomain) {
   if (!bodyHtml) return [];
@@ -202,12 +213,12 @@ function extractLinksFromBody(bodyHtml, currentPath, courseDomain) {
     if (bbfile) {
       try {
         const info = JSON.parse(bbfile);
-        const filename = sanitizeFilename(info.displayName || info.linkName || "attachment");
+        const displayName = info.displayName || info.linkName || a.textContent.trim() || "file";
         const url = info.resourceUrl || a.getAttribute("href");
         if (url) {
           const absUrl = url.startsWith("http") ? url : `${courseDomain}${url.startsWith("/") ? "" : "/"}${url}`;
           files.push({
-            filename,
+            filename: sanitizeFilename(displayName),
             url: absUrl,
             path: currentPath,
             source: "embedded-bbfile"
@@ -215,7 +226,7 @@ function extractLinksFromBody(bodyHtml, currentPath, courseDomain) {
           continue;
         }
       } catch {
-        // Fallback to standard href
+        // Fallback to standard href below
       }
     }
 
@@ -258,56 +269,55 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
   const files = [];
   const pages = [];
   const visitedNodes = new Set();
+  const addedUrls = new Set();
+
+  function addFile(fileObj) {
+    if (!fileObj.url) return;
+    if (addedUrls.has(fileObj.url)) return;
+    addedUrls.add(fileObj.url);
+    files.push(fileObj);
+  }
 
   async function processNode(node, currentPath) {
     if (!node || !node.id || visitedNodes.has(node.id)) return;
     visitedNodes.add(node.id);
 
-    const title = node.title || "Untitled Section";
+    const title = node.title || "Untitled";
     const safeTitle = sanitizeFilename(title);
-    const nodePath = `${currentPath}${safeTitle}/`;
+    const handlerId = getHandlerId(node);
+    const isFolder = isContainerNode(node);
+
+    // If it's a folder or module, sub-items live in its subfolder
+    const childPath = isFolder ? `${currentPath}${safeTitle}/` : currentPath;
 
     onStatus(`Scanning: ${title}`);
 
-    // 1. Fetch item details (includes body text)
+    // Fetch node detail
+    let detail = null;
     try {
       const detailRes = await fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}`);
       if (detailRes.ok) {
-        const detail = await detailRes.json();
-        const body = detail.body || "";
-
-        // Extract embedded files from body
-        if (body) {
-          const embedded = extractLinksFromBody(body, nodePath, domain);
-          files.push(...embedded);
-
-          // Save page text as documentation/notes
-          pages.push({
-            title: title,
-            html: body,
-            path: nodePath,
-            filename: `${safeTitle}.md`,
-            created: detail.created
-          });
-        }
+        detail = await detailRes.json();
       }
     } catch (err) {
       console.warn(`[Blackboard Downloader] Could not fetch detail for ${node.id}:`, err);
     }
 
-    // 2. Fetch direct file attachments
+    // 1. Direct File Attachments endpoint (most common for slides, PDFs, problem sets)
     try {
       const attRes = await fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/attachments`);
       if (attRes.ok) {
         const attData = await attRes.json();
-        const results = attData.results || [];
+        const results = Array.isArray(attData.results) ? attData.results : (Array.isArray(attData) ? attData : []);
         for (const att of results) {
-          const filename = sanitizeFilename(att.fileName || "attachment");
+          if (!att.id) continue;
+          let filename = att.fileName || att.name || title;
           const dlUrl = `${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/attachments/${att.id}/download`;
-          files.push({
-            filename,
+          
+          addFile({
+            filename: sanitizeFilename(filename),
             url: dlUrl,
-            path: nodePath,
+            path: childPath,
             source: "attachment"
           });
         }
@@ -316,12 +326,47 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
       console.warn(`[Blackboard Downloader] Could not fetch attachments for ${node.id}:`, err);
     }
 
-    // 3. Recurse into children (folders, learning modules)
-    if (node.hasChildren || node.contentHandler?.includes("folder") || node.contentHandler?.includes("lesson")) {
+    // 2. ContentHandler File Object (e.g. resource/x-bb-file)
+    const fileObj = (typeof node.contentHandler === "object" ? node.contentHandler?.file : null) ||
+                    (typeof detail?.contentHandler === "object" ? detail?.contentHandler?.file : null);
+    if (fileObj && fileObj.id) {
+      const fName = fileObj.name || title;
+      const dlUrl = `${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/attachments/${fileObj.id}/download`;
+      addFile({
+        filename: sanitizeFilename(fName),
+        url: dlUrl,
+        path: childPath,
+        source: "contentHandler-file"
+      });
+    }
+
+    // 3. Embedded files from body HTML (e.g. data-bbfile, WebDAV, direct file links)
+    const body = detail?.body || node.body || "";
+    if (body) {
+      const embedded = extractLinksFromBody(body, childPath, domain);
+      for (const ef of embedded) {
+        addFile(ef);
+      }
+
+      // Record text note only if needed
+      pages.push({
+        title: title,
+        html: body,
+        path: isFolder ? `${childPath}` : currentPath,
+        filename: `${safeTitle}.md`,
+        created: detail?.created || node.created
+      });
+    }
+
+    // 4. Recurse into children (folders, learning modules, lessons)
+    // Check if it's a container or if it might have children
+    if (isFolder || node.hasChildren !== false) {
       try {
         const children = await fetchAllPages(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/children?limit=100`);
-        for (const child of children) {
-          await processNode(child, nodePath);
+        if (Array.isArray(children) && children.length > 0) {
+          for (const child of children) {
+            await processNode(child, childPath);
+          }
         }
       } catch (err) {
         console.warn(`[Blackboard Downloader] Could not fetch children for ${node.id}:`, err);
@@ -332,19 +377,43 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
   // Fetch top-level course contents
   try {
     const topLevel = await fetchAllPages(`${domain}/learn/api/public/v1/courses/${courseId}/contents?limit=100`);
-    for (const item of topLevel) {
-      await processNode(item, "");
+    if (Array.isArray(topLevel)) {
+      for (const item of topLevel) {
+        await processNode(item, "");
+      }
     }
   } catch (err) {
     console.error("[Blackboard Downloader] Failed to fetch top level contents:", err);
   }
 
+  // 5. Check Course Resources (Content Collection Course Files) if top-level contents had few files
+  try {
+    const resources = await fetchAllPages(`${domain}/learn/api/public/v1/courses/${courseId}/resources?limit=100`);
+    if (Array.isArray(resources) && resources.length > 0) {
+      onStatus("Scanning course resource files...");
+      for (const res of resources) {
+        if (res.type === "File" || (!res.type && res.name && res.name.includes("."))) {
+          const dlUrl = res.downloadUrl || `${domain}/learn/api/public/v1/courses/${courseId}/resources/${res.id}`;
+          addFile({
+            filename: sanitizeFilename(res.name || "resource"),
+            url: dlUrl,
+            path: "Course Files/",
+            source: "course-resources"
+          });
+        }
+      }
+    }
+  } catch {
+    // Course resources endpoint is optional; ignore if disabled
+  }
+
   return { files, pages };
 }
 
-/**
- * Fetches course announcements.
- */
+// ---------------------------------------------------------------------------
+// Course Announcements & Grades
+// ---------------------------------------------------------------------------
+
 async function fetchCourseAnnouncements(courseId) {
   const domain = window.location.origin;
   try {
@@ -361,9 +430,6 @@ async function fetchCourseAnnouncements(courseId) {
   }
 }
 
-/**
- * Fetches course grades for the current user.
- */
 async function fetchCourseGrades(courseId, userId = null) {
   const domain = window.location.origin;
   const uid = userId || (await getCurrentUser())?.id || "me";
@@ -403,7 +469,7 @@ function scrapeDomCourseFiles() {
   const seenUrls = new Set();
 
   const links = document.querySelectorAll(
-    'a[href*="/bbcswebdav/"], a[href*="content/file"], a[data-bbfile], a[href$=".pdf"], a[href$=".docx"], a[href$=".pptx"], a[href$=".zip"]'
+    'a[href*="/bbcswebdav/"], a[href*="content/file"], a[data-bbfile], a[href$=".pdf"], a[href$=".docx"], a[href$=".pptx"], a[href$=".zip"], a[href$=".xlsx"], a[href$=".doc"], a[href$=".ppt"]'
   );
 
   for (const a of links) {
@@ -424,8 +490,7 @@ function scrapeDomCourseFiles() {
     if (seenUrls.has(absUrl)) continue;
     seenUrls.add(absUrl);
 
-    // Try finding section name
-    const sectionEl = a.closest(".liItem, .course-outline-item, .item, li");
+    const sectionEl = a.closest(".liItem, .course-outline-item, .element-details, .item, li");
     const sectionTitle = sectionEl?.querySelector("h3, .item-title, .title, strong")?.textContent?.trim() || "";
 
     const path = sectionTitle ? `${sanitizeFilename(sectionTitle)}/` : "";
