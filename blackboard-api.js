@@ -135,6 +135,53 @@ async function fetchCourseDetails(courseId) {
   return null;
 }
 
+/**
+ * Scrapes visible course cards/links directly from the DOM as a fallback.
+ */
+function extractCoursesFromDOM() {
+  const courses = [];
+  const seenIds = new Set();
+
+  const links = document.querySelectorAll(
+    "a[href*='/ultra/courses/'], a[href*='course_id='], a[href*='type=Course']"
+  );
+
+  for (const a of links) {
+    const href = a.getAttribute("href") || "";
+    let rawId = null;
+
+    const ultraMatch = href.match(/\/ultra\/courses\/(_\d+_\d+|[^/?#]+)/i);
+    if (ultraMatch && ultraMatch[1] && !ultraMatch[1].startsWith("course")) {
+      rawId = ultraMatch[1];
+    } else {
+      const origMatch = href.match(/course_id=([_0-9a-zA-Z]+)/i) || href.match(/id=([_0-9a-zA-Z]+)/i);
+      if (origMatch && origMatch[1]) {
+        rawId = origMatch[1];
+      }
+    }
+
+    if (!rawId || seenIds.has(rawId)) continue;
+    seenIds.add(rawId);
+
+    const titleEl = a.querySelector("h3, h4, .course-title, [class*='title'], span") || a;
+    let name = (titleEl.textContent || "").trim();
+    if (!name || name.length < 2) {
+      name = (a.getAttribute("title") || a.getAttribute("aria-label") || `Course ${rawId}`).trim();
+    }
+
+    courses.push({
+      id: rawId,
+      name: name,
+      safeName: sanitizeFilename(name),
+      courseCode: rawId,
+      term: "Current Courses",
+      isCompleted: false
+    });
+  }
+
+  return courses;
+}
+
 async function fetchAllCourses() {
   const domain = window.location.origin;
   const user = await getCurrentUser();
@@ -179,6 +226,34 @@ async function fetchAllCourses() {
         isCompleted: false
       });
     }
+  }
+
+  // Fallback 1: Query public courses API
+  if (courses.length === 0) {
+    try {
+      const publicCourses = await fetchAllPages(`${domain}/learn/api/public/v1/courses?limit=100`);
+      for (const item of publicCourses) {
+        if (!item?.id || seenIds.has(item.id)) continue;
+        seenIds.add(item.id);
+        const name = item.name || `Course ${item.id}`;
+        courses.push({
+          id: item.id,
+          name: name,
+          safeName: sanitizeFilename(name),
+          courseCode: item.courseId || item.id,
+          term: item.term?.name || "Current Term",
+          isCompleted: item.status === "Closed"
+        });
+      }
+    } catch (err) {
+      console.warn("[Blackboard Downloader] Public courses API fallback failed:", err);
+    }
+  }
+
+  // Fallback 2: Extract courses directly from the current page DOM
+  if (courses.length === 0) {
+    const scraped = extractCoursesFromDOM();
+    courses.push(...scraped);
   }
 
   return courses.sort((a, b) => a.name.localeCompare(b.name));

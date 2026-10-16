@@ -357,7 +357,8 @@ async function openCourseSelector() {
 }
 
 // ---------------------------------------------------------------------------
-// Button Injection (Header & Floating Action Button)
+// ---------------------------------------------------------------------------
+// Button Injection (Header & Course List)
 // ---------------------------------------------------------------------------
 
 function injectButtons() {
@@ -368,8 +369,14 @@ function injectButtons() {
 
   const courseId = getCourseId();
 
-  // 1. Injected Header / Outline Button
+  // 1. Inside a Course Outline / Content View
   if (courseId) {
+    // Remove home/dashboard button if switching from dashboard to course
+    const oldHome = document.getElementById("bb-injected-home-btn");
+    if (oldHome) oldHome.remove();
+    const oldBar = document.getElementById("bb-dashboard-top-bar");
+    if (oldBar) oldBar.remove();
+
     if (!document.getElementById("bb-injected-btn")) {
       const btn = document.createElement("button");
       btn.id = "bb-injected-btn";
@@ -397,15 +404,23 @@ function injectButtons() {
 
       const mount = findMountPoint(ULTRA_MOUNT_SELECTORS) || findMountPoint(ORIGINAL_MOUNT_SELECTORS);
       if (mount) {
-        mount.appendChild(btn);
+        if (mount.tagName === "H1") {
+          mount.insertAdjacentElement("afterend", btn);
+        } else {
+          mount.appendChild(btn);
+        }
       }
     }
   } else if (isBlackboardHomepage()) {
+    // 2. On Courses Page / Dashboard
+    const oldCourse = document.getElementById("bb-injected-btn");
+    if (oldCourse) oldCourse.remove();
+
     if (!document.getElementById("bb-injected-home-btn")) {
       const btn = document.createElement("button");
       btn.id = "bb-injected-home-btn";
       btn.innerHTML = `
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
           <path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 20h14"/>
         </svg>
         <span>Download Courses</span>
@@ -413,15 +428,43 @@ function injectButtons() {
       btn.style.cssText = `
         display: inline-flex; align-items: center; gap: 8px;
         background: #0284c7; color: #ffffff; border: none; border-radius: 8px;
-        padding: 8px 14px; font-size: 13px; font-weight: 600;
-        cursor: pointer; margin-left: 12px;
+        padding: 8px 16px; font-size: 13.5px; font-weight: 600;
+        cursor: pointer; margin-left: 12px; vertical-align: middle;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+        transition: background 0.15s, transform 0.08s;
+        flex-shrink: 0;
       `;
+      btn.addEventListener("mouseenter", () => (btn.style.background = "#0369a1"));
+      btn.addEventListener("mouseleave", () => (btn.style.background = "#0284c7"));
+      btn.addEventListener("mousedown", () => (btn.style.transform = "scale(0.97)"));
+      btn.addEventListener("mouseup", () => (btn.style.transform = "scale(1)"));
       btn.addEventListener("click", openCourseSelector);
 
       const mount = findMountPoint(DASHBOARD_MOUNT_SELECTORS);
-      if (mount) mount.appendChild(btn);
+      if (mount) {
+        if (mount.tagName === "H1") {
+          if (mount.parentElement && getComputedStyle(mount.parentElement).display.includes("flex")) {
+            mount.parentElement.appendChild(btn);
+          } else {
+            mount.insertAdjacentElement("afterend", btn);
+          }
+        } else if (
+          mount.tagName === "MAIN" ||
+          mount.id === "main-content" ||
+          mount.id === "content" ||
+          mount.id === "portal-page" ||
+          mount.classList?.contains("base-layout")
+        ) {
+          const bar = document.createElement("div");
+          bar.id = "bb-dashboard-top-bar";
+          bar.style.cssText = "padding: 14px 24px 6px; display: flex; align-items: center; justify-content: flex-end; width: 100%; box-sizing: border-box;";
+          bar.appendChild(btn);
+          mount.prepend(bar);
+        } else {
+          mount.appendChild(btn);
+        }
+      }
     }
   }
 }

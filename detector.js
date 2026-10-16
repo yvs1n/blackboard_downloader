@@ -48,8 +48,21 @@ function isBlackboard() {
   const path = window.location.pathname;
 
   // Obvious domain / path signals
-  if (host.includes("blackboard.com")) return true;
-  if (path.includes("/ultra/") || path.includes("/webapps/blackboard/") || path.includes("/webapps/portal/")) {
+  if (
+    host.includes("blackboard") ||
+    host.includes("bb.") ||
+    host.startsWith("bb-") ||
+    host.includes("learn.")
+  ) {
+    return true;
+  }
+
+  if (
+    path.startsWith("/ultra") ||
+    path.startsWith("/webapps") ||
+    path.includes("/ultra/") ||
+    path.includes("/webapps/")
+  ) {
     return true;
   }
 
@@ -133,14 +146,7 @@ function getCourseName() {
 function isBlackboardHomepage() {
   if (!isBlackboard()) return false;
   if (getCourseId()) return false;
-
-  const path = window.location.pathname;
-  return (
-    path.includes("/ultra/course") ||
-    path.includes("/ultra/stream") ||
-    path.includes("/ultra/institution-page") ||
-    path.includes("/webapps/portal")
-  );
+  return true;
 }
 
 /**
@@ -149,12 +155,14 @@ function isBlackboardHomepage() {
 const ULTRA_MOUNT_SELECTORS = [
   "#course-outline-title",
   ".course-title",
+  "h1[data-analytics-id*='course']",
+  "header .element-details",
   ".course-outline-header",
   "#main-content-header",
   ".breadcrumbs",
-  "header .element-details",
   ".ultra-course-header",
-  "#base-header"
+  "#base-header",
+  "main header"
 ];
 
 const ORIGINAL_MOUNT_SELECTORS = [
@@ -168,12 +176,26 @@ const ORIGINAL_MOUNT_SELECTORS = [
 ];
 
 const DASHBOARD_MOUNT_SELECTORS = [
+  "h1[data-analytics-id*='course']",
+  ".base-courses-filter",
+  "div[class*='courses-filter']",
+  "div[class*='course-list-header']",
+  "div[class*='courses-container'] header",
+  "header .element-details",
   ".stream-header",
   ".course-list-header",
-  "#main-content",
-  ".base-courses-filter",
+  "main h1",
+  "header h1",
+  "#main-content header",
+  "main header",
+  "#pageTitleBar",
+  "#breadcrumbs",
+  ".breadcrumbs",
   "#portal-page",
-  "#content"
+  "#main-content",
+  "main",
+  "#content",
+  ".base-layout"
 ];
 
 function findMountPoint(selectors) {

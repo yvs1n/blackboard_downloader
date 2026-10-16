@@ -267,15 +267,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Shortcut command handler
-chrome.commands.onCommand.addListener((command) => {
-  if (command === "download-current") {
-    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { action: "trigger_download" }, () => {
-          const _ = chrome.runtime.lastError;
-        });
-      }
-    });
-  }
-});

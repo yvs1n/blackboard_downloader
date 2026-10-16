@@ -57,14 +57,6 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Blackboard Course Downloader"
-  },
-  "commands": {
-    "download-current": {
-      "suggested_key": {
-        "default": "Alt+Shift+B",
-        "mac": "Alt+Shift+B"
-      },
-      "description": "Download current course or open course selector"
-    }
   }
 }
+
