@@ -363,6 +363,9 @@ async function openCourseSelector() {
 function injectButtons() {
   if (!isBlackboard()) return;
 
+  const oldFab = document.getElementById("bb-fab-button");
+  if (oldFab) oldFab.remove();
+
   const courseId = getCourseId();
 
   // 1. Injected Header / Outline Button
@@ -421,44 +424,5 @@ function injectButtons() {
       if (mount) mount.appendChild(btn);
     }
   }
-
-  // 2. Floating Action Button (FAB)
-  // Ensures the user can ALWAYS trigger the downloader even if university custom themes change header DOM
-  if (!document.getElementById("bb-fab-button")) {
-    const fab = document.createElement("button");
-    fab.id = "bb-fab-button";
-    fab.title = courseId ? "Download Course Materials" : "Download Blackboard Courses";
-    fab.style.cssText = `
-      position: fixed; bottom: 24px; left: 24px; z-index: 2147483645;
-      width: 46px; height: 46px; border-radius: 50%;
-      background: #0f172a; color: #38bdf8; border: 1px solid rgba(255,255,255,0.15);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; transition: transform 0.15s, background 0.15s;
-    `;
-
-    fab.innerHTML = `
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 20h14"/>
-      </svg>
-    `;
-
-    fab.addEventListener("mouseenter", () => {
-      fab.style.transform = "scale(1.08)";
-      fab.style.background = "#1e293b";
-    });
-    fab.addEventListener("mouseleave", () => {
-      fab.style.transform = "scale(1)";
-      fab.style.background = "#0f172a";
-    });
-    fab.addEventListener("click", () => {
-      if (getCourseId()) {
-        downloadCurrentCourse();
-      } else {
-        openCourseSelector();
-      }
-    });
-
-    document.body.appendChild(fab);
-  }
 }
+
