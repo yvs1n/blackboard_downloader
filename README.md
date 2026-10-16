@@ -64,7 +64,7 @@ While Canvas LMS uses `/api/v1/courses/...`, Blackboard uses a distinct structur
 
 ### 1. Download Current Course
 1. Open your university Blackboard portal and navigate inside any course outline or content page.
-2. Click the injected **"Download Course Content"** button next to the course title, or click the extension icon in your toolbar and press **"Download course content"** (or use the shortcut `Ctrl+Alt+B`).
+2. Click the injected **"Download Course Content"** button next to the course title, or click the extension icon in your toolbar and press **"Download course content"** (or use the shortcut `Shift+Alt+B`).
 3. The floating progress panel will display live status as files and materials are saved into a clean ZIP archive.
 
 ### 2. Batch Download Multiple Courses

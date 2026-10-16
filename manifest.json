@@ -61,8 +61,8 @@
   "commands": {
     "download-current": {
       "suggested_key": {
-        "default": "Ctrl+Alt+B",
-        "mac": "Command+Alt+B"
+        "default": "Alt+Shift+B",
+        "mac": "Alt+Shift+B"
       },
       "description": "Download current course or open course selector"
     }
