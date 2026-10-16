@@ -40,7 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Track background download queue
   function checkQueue() {
     chrome.runtime.sendMessage({ type: "GET_DOWNLOAD_STATUS" }, (status) => {
-      if (chrome.runtime.lastError || !status || status.total === 0 || status.done) {
+      const err = chrome.runtime.lastError;
+      if (err || !status || status.total === 0 || status.done) {
         queuePanel.style.display = "none";
         return;
       }
@@ -54,10 +55,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   checkQueue();
-  setInterval(checkQueue, 1000);
+  const queueInterval = setInterval(checkQueue, 1000);
+  window.addEventListener("unload", () => clearInterval(queueInterval));
 
   document.getElementById("queueCancelBtn").addEventListener("click", () => {
-    chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOADS" });
+    chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOADS" }, () => {
+      const _ = chrome.runtime.lastError;
+    });
   });
 
   // Detect Blackboard in active tab
@@ -69,7 +73,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     chrome.tabs.sendMessage(tab.id, { action: "get_status" }, (response) => {
-      if (chrome.runtime.lastError || !response || !response.isBlackboard) {
+      const err = chrome.runtime.lastError;
+      if (err || !response || !response.isBlackboard) {
         statusText.textContent = "Navigate to a Blackboard page first.";
         banner.classList.add("state-error");
         return;
@@ -91,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
           downloadBtn.disabled = true;
           downloadBtnLabel.textContent = "Starting download...";
           chrome.tabs.sendMessage(tab.id, { action: "trigger_download" }, () => {
+            const _ = chrome.runtime.lastError;
             downloadBtnLabel.textContent = "Queued!";
             setTimeout(() => window.close(), 1200);
           });
@@ -102,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         downloadBtn.addEventListener("click", () => {
           chrome.tabs.sendMessage(tab.id, { action: "open_course_selector" }, () => {
+            const _ = chrome.runtime.lastError;
             window.close();
           });
         });
@@ -111,6 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
         downloadBtn.disabled = false;
         downloadBtn.addEventListener("click", () => {
           chrome.tabs.sendMessage(tab.id, { action: "open_course_selector" }, () => {
+            const _ = chrome.runtime.lastError;
             window.close();
           });
         });

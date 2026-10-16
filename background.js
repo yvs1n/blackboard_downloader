@@ -22,6 +22,18 @@ let downloadSettings = { conflictAction: "uniquify", throttleMs: 200, folderPref
 const chromeIdToJob = new Map();
 
 // ---------------------------------------------------------------------------
+// Path Sanitization Helper
+// ---------------------------------------------------------------------------
+
+function sanitizeDownloadPath(rawPath) {
+  if (!rawPath) return "file";
+  let p = rawPath.replace(/\\/g, "/");
+  p = p.replace(/^\/+/, "");
+  p = p.replace(/\/+/g, "/");
+  return p;
+}
+
+// ---------------------------------------------------------------------------
 // State Persistence (chrome.storage.session)
 // ---------------------------------------------------------------------------
 
@@ -89,9 +101,13 @@ function broadcastStatus() {
   updateBadge();
   const status = getStatus();
   if (sourceTabId) {
-    chrome.tabs.sendMessage(sourceTabId, { type: "DOWNLOAD_STATUS", payload: status }).catch(() => {});
+    chrome.tabs.sendMessage(sourceTabId, { type: "DOWNLOAD_STATUS", payload: status }, () => {
+      const _ = chrome.runtime.lastError;
+    });
   }
-  chrome.runtime.sendMessage({ type: "DOWNLOAD_STATUS", payload: status }).catch(() => {});
+  chrome.runtime.sendMessage({ type: "DOWNLOAD_STATUS", payload: status }, () => {
+    const _ = chrome.runtime.lastError;
+  });
 }
 
 function updateBadge() {
@@ -106,12 +122,18 @@ function updateBadge() {
 
 function notifyCompletion() {
   const { completed, failed } = getStatus();
-  chrome.notifications.create("bb-download-complete", {
-    type: "basic",
-    iconUrl: "icons/icon-128.png",
-    title: "Blackboard Course Downloader",
-    message: `Download finished: ${completed} items saved${failed > 0 ? `, ${failed} failed` : ""}.`
-  });
+  try {
+    chrome.notifications.create("bb-download-complete", {
+      type: "basic",
+      iconUrl: "icons/icon-128.png",
+      title: "Blackboard Course Downloader",
+      message: `Download finished: ${completed} items saved${failed > 0 ? `, ${failed} failed` : ""}.`
+    }, () => {
+      const _ = chrome.runtime.lastError;
+    });
+  } catch (err) {
+    console.warn("[Blackboard Downloader] Notification error:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +163,7 @@ async function processNextJob() {
 
   const options = {
     url: job.url,
-    filename: job.fullPath,
+    filename: sanitizeDownloadPath(job.fullPath),
     conflictAction: downloadSettings.conflictAction || "uniquify"
   };
 
@@ -250,7 +272,9 @@ chrome.commands.onCommand.addListener((command) => {
   if (command === "download-current") {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
       if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { action: "trigger_download" }).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, { action: "trigger_download" }, () => {
+          const _ = chrome.runtime.lastError;
+        });
       }
     });
   }

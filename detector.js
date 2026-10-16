@@ -139,9 +139,7 @@ function isBlackboardHomepage() {
     path.includes("/ultra/course") ||
     path.includes("/ultra/stream") ||
     path.includes("/ultra/institution-page") ||
-    path.includes("/webapps/portal") ||
-    path === "/" ||
-    path.endsWith("/login") === false
+    path.includes("/webapps/portal")
   );
 }
 
