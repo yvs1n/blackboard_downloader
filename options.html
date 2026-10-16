@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackboard Course Downloader — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="settings-container">
+    <header class="settings-header">
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 20h14"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Blackboard Course Downloader</h1>
+          <p class="subtitle">Configure download presets, content types, and archiving formats</p>
+        </div>
+      </div>
+      <button id="saveBtn" class="save-btn">Save Changes</button>
+    </header>
+
+    <main class="settings-main">
+      <!-- Section: Download Method -->
+      <section class="card">
+        <h2>Download Method</h2>
+        <p class="section-desc">Choose how course materials are packaged when downloaded.</p>
+        
+        <div class="radio-group">
+          <label class="radio-card">
+            <input type="radio" name="zipMode" value="true" id="zipModeTrue" checked>
+            <div class="radio-content">
+              <strong>Single ZIP Archive (Recommended)</strong>
+              <span>Compresses all course materials, folders, and notes into a clean, streaming <code>[Course_Name].zip</code>.</span>
+            </div>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="zipMode" value="false" id="zipModeFalse">
+            <div class="radio-content">
+              <strong>Individual Files & Folders</strong>
+              <span>Downloads files directly into your browser's Downloads directory under <code>[Course_Name]/...</code>.</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <!-- Section: Content Types -->
+      <section class="card">
+        <h2>Content to Include</h2>
+        <p class="section-desc">Select which course elements to collect and archive.</p>
+
+        <div class="checkbox-grid">
+          <label class="checkbox-item">
+            <input type="checkbox" id="typeFiles" checked>
+            <div>
+              <strong>Files & Attachments</strong>
+              <span>Lecture slides, PDFs, Word docs, spreadsheets, code files, and ZIPs.</span>
+            </div>
+          </label>
+
+          <label class="checkbox-item">
+            <input type="checkbox" id="typePages" checked>
+            <div>
+              <strong>Pages & Notes</strong>
+              <span>Instructor content descriptions, learning modules, and lecture notes.</span>
+            </div>
+          </label>
+
+          <label class="checkbox-item">
+            <input type="checkbox" id="typeAnnouncements" checked>
+            <div>
+              <strong>Course Announcements</strong>
+              <span>Instructor announcements exported into a clean document.</span>
+            </div>
+          </label>
+
+          <label class="checkbox-item">
+            <input type="checkbox" id="typeGrades" checked>
+            <div>
+              <strong>Grades & Feedback</strong>
+              <span>Your grades exported as a spreadsheet (<code>Grades.csv</code>) and readable table.</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <!-- Section: Export Formatting -->
+      <section class="card">
+        <h2>Export & Filtering Options</h2>
+        <p class="section-desc">Customize text document format and media filtering.</p>
+
+        <div class="form-row">
+          <label for="exportFormat">Document Format:</label>
+          <select id="exportFormat" class="select-input">
+            <option value="md">Clean Markdown (.md) — Best for Obsidian, Notion, NotebookLM, AI</option>
+            <option value="html">Standalone Webpage (.html) — Formatted with styling</option>
+          </select>
+        </div>
+
+        <div class="form-row checkbox-row">
+          <label class="inline-checkbox">
+            <input type="checkbox" id="excludeVideos">
+            <span><strong>Exclude video files</strong> (.mp4, .mov, etc.) to keep archives compact and save bandwidth.</span>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label for="folderPrefix">Download Folder Prefix (optional):</label>
+          <input type="text" id="folderPrefix" class="text-input" placeholder="e.g. University_2026">
+          <span class="help-text">Prepends a folder name to your downloads for clean semester organization.</span>
+        </div>
+      </section>
+    </main>
+
+    <div id="saveToast" class="save-toast">Settings saved successfully!</div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

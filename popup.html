@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackboard Course Downloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 20h14"/>
+          </svg>
+        </div>
+        <span class="title">Blackboard Downloader</span>
+      </div>
+      <a href="#" id="settingsLink" class="settings-btn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </a>
+    </header>
+
+    <!-- Status Banner -->
+    <div id="statusBanner" class="status-banner">
+      <span id="statusIndicator" class="status-indicator"></span>
+      <span id="statusText">Checking Blackboard connection...</span>
+    </div>
+
+    <!-- Course Card -->
+    <div id="courseInfo" class="course-card" style="display:none;">
+      <div class="course-label">Detected Course</div>
+      <div id="courseName" class="course-name"></div>
+    </div>
+
+    <!-- Content Types Preview -->
+    <div class="tags-section">
+      <div class="tags-header">Included in Download</div>
+      <div id="contentTags" class="content-tags"></div>
+    </div>
+
+    <!-- Active Queue Progress (if in progress) -->
+    <div id="queuePanel" class="queue-panel" style="display:none;">
+      <div class="queue-header">
+        <span class="queue-title">Active Download Queue</span>
+        <span id="queuePct" class="queue-pct">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="queueProgressBar" class="progress-bar-fill"></div>
+      </div>
+      <div class="queue-footer">
+        <span id="queueStats" class="queue-stats">0 / 0</span>
+        <button id="queueCancelBtn" class="queue-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Primary Action Button -->
+    <div class="action-section">
+      <button id="downloadBtn" class="primary-btn" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 4v12"/><path d="M6 12l6 6 6-6"/><path d="M5 20h14"/>
+        </svg>
+        <span id="downloadBtnLabel">Download course content</span>
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>Shortcut: <kbd>Ctrl+Shift+D</kbd></span>
+      <span>• Ultra & Original</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

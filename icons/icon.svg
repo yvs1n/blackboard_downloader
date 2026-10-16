@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Background Card -->
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#bg)" stroke="#334155" stroke-width="2"/>
+  
+  <!-- Blackboard Chalkboard / Folder Plate -->
+  <rect x="22" y="24" width="84" height="80" rx="14" fill="#090d16" stroke="#475569" stroke-width="2"/>
+  
+  <!-- Blackboard Top Hanging Bar / Tab -->
+  <path d="M 38 24 L 52 16 L 76 16 L 90 24 Z" fill="#2563eb" opacity="0.9"/>
+  
+  <!-- Download Arrow with Accent Gradient -->
+  <g filter="url(#shadow)">
+    <!-- Shaft -->
+    <path d="M 64 38 L 64 74" stroke="url(#accent)" stroke-width="10" stroke-linecap="round"/>
+    <!-- Head -->
+    <path d="M 46 62 L 64 80 L 82 62" fill="none" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Base Tray -->
+  <line x1="38" y1="92" x2="90" y2="92" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+</svg>
