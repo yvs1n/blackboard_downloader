@@ -26,16 +26,26 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Load configured content types (Files = true by default, others false)
-  chrome.storage.sync.get({
-    contentTypes: { files: true, pages: false, announcements: false, grades: false }
-  }, (settings) => {
-    for (const [key, label] of Object.entries(CONTENT_TYPE_LABELS)) {
-      const tag = document.createElement("span");
-      tag.className = `content-tag${settings.contentTypes[key] ? " active" : ""}`;
-      tag.textContent = label;
-      contentTagsEl.appendChild(tag);
-    }
-  });
+  function renderTags() {
+    chrome.storage.sync.get({
+      contentTypes: { files: true, pages: false, announcements: false, grades: false },
+      zipMode: true
+    }, (settings) => {
+      contentTagsEl.textContent = "";
+      for (const [key, label] of Object.entries(CONTENT_TYPE_LABELS)) {
+        const tag = document.createElement("span");
+        tag.className = `content-tag${settings.contentTypes[key] ? " active" : ""}`;
+        tag.textContent = label;
+        contentTagsEl.appendChild(tag);
+      }
+      const mode = document.createElement("span");
+      mode.className = "content-tag active";
+      mode.textContent = settings.zipMode ? "Saved as one ZIP" : "Saved as separate files";
+      contentTagsEl.appendChild(mode);
+    });
+  }
+  renderTags();
+  chrome.storage.onChanged.addListener(renderTags);
 
   // Track background download queue
   function checkQueue() {
@@ -56,7 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   checkQueue();
   const queueInterval = setInterval(checkQueue, 1000);
-  window.addEventListener("unload", () => clearInterval(queueInterval));
+  window.addEventListener("pagehide", () => clearInterval(queueInterval));
 
   document.getElementById("queueCancelBtn").addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOADS" }, () => {

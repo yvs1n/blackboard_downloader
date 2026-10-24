@@ -132,9 +132,6 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
     }
   }
 
-  function isVideoName(name) {
-    return /\.(mp4|mov|avi|mkv)$/i.test(name);
-  }
 
   log("Building ZIP archive (streaming)...");
 
@@ -254,7 +251,7 @@ async function downloadDirect(items, courseName, settings, log = () => {}) {
       if (err && err.name === "AbortError") return null;
       // Fall back to the provisional name if the header probe fails
     }
-    if (settings.excludeVideos && /\.(mp4|mov|avi|mkv)$/i.test(filename)) return null;
+    if (settings.excludeVideos && isVideoName(filename)) return null;
     updateDownloadPanel({
       total: items.length, completed: ++completedSoFar, failed: 0, queued: 0, downloading: 1,
       currentFile: `Preparing: ${filename}`, failedFiles: [], done: false, cancelled: false,
@@ -358,7 +355,9 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
     // Add page notes ONLY if explicitly requested in settings
     if (types.pages && pages.length > 0) {
       for (const p of pages) {
-        const content = settings.exportFormat === "html" ? sanitizeHtml(p.html) : htmlToMarkdown(p.html, p.title);
+        const content = settings.exportFormat === "html"
+          ? `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title></head><body><h1>${escapeHtml(p.title)}</h1>${sanitizeHtml(p.html)}</body></html>`
+          : htmlToMarkdown(p.html, p.title);
         const ext = settings.exportFormat === "html" ? ".html" : ".md";
         allItems.push({
           filename: `${sanitizeFilename(p.title)}${ext}`,

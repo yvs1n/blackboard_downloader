@@ -125,6 +125,11 @@ function truncateName(name, maxLen = 120) {
   return name.slice(0, maxLen - ext.length).replace(/[. ]+$/, "") + ext;
 }
 
+/** True for video files the "skip videos" option should drop. */
+function isVideoName(name) {
+  return /\.(mp4|mov|avi|mkv|webm|m4v|wmv)$/i.test(String(name || ""));
+}
+
 /** Escapes text for safe interpolation into HTML. */
 function escapeHtml(value) {
   return String(value ?? "")

@@ -1,92 +1,56 @@
-# Blackboard Course Downloader & Exporter 🎓📦
+# Blackboard Course Downloader
 
-A lightweight, high-performance browser extension (Chrome, Edge, Brave, Opera) designed to batch download and archive entire courses, lecture slides, documents, notes, announcements, and grades from **Blackboard Learn (Ultra & Original)**.
+A browser extension (Chrome, Edge, Brave, Opera) that downloads course files, notes, announcements and grades from **Blackboard Learn** (Ultra and Original) into an organized ZIP or a folder tree.
 
----
+It runs inside your logged-in browser tab, so it needs no passwords or API keys, and nothing is sent anywhere except between your browser and your university's Blackboard server.
 
-## ⚡ Key Features
+## Features
 
-- **No API Keys or Passwords Required:** Operates client-side under your active university browser session.
-- **Universal Blackboard Support:** Built for both **Blackboard Learn Ultra** (modern SPA) and **Blackboard Learn Original** (classic webapp).
-- **Streaming ZIP Generator:** Packages all course materials into an organized `.zip` file on-the-fly using `client-zip` (low memory, instant download).
-- **Course Selector Modal:** Open from the Blackboard homepage or courses list to select and batch-download multiple courses across active and past semesters.
-- **Organized Folder Structure:** Preserves course folders, subfolders, learning modules, and content areas.
-- **Embedded Document Extraction:** Traverses content areas, direct attachments, `<a data-bbfile>` JSON links, and Content Collection (`/bbcswebdav/`) files.
-- **Export to Markdown & CSV:**
-  - Rich-text pages, lecture notes, and syllabus saved as clean Markdown (`.md`) or HTML.
-  - Course announcements saved to `Announcements/Announcements.md`.
-  - Student grades exported to both `Grades/Grades.csv` and formatted Markdown.
-- **Dual-Engine Architecture:**
-  - **Primary:** High-speed recursive traversal via Blackboard Learn REST API (`/learn/api/public/v1/...`).
-  - **Fallback:** Automatic DOM scraping engine if a university admin has restricted student REST API access.
-- **Live Progress & Control:** Floating panel with live progress bar, file counters, cancel button, and error reporting.
+- **Download one course** from the button added next to the course title, or from the extension popup.
+- **Download many courses** from the dashboard: a selector lists your courses grouped by term, with search and select all.
+- **Keeps the folder structure** of folders and learning modules, and names files by their real uploaded filename.
+- **Finds files in** content attachments, rich-text links (`data-bbfile`, `/bbcswebdav/`) and Course Files.
+- **Optional extras:** page text as Markdown or HTML, announcements, and your grades as CSV and Markdown.
+- **REST API first, DOM fallback:** if the university blocks the student REST API, visible file links on the current page are used instead (shallower).
+- **Progress panel** with scanning status, per-file progress, cancel, and a list of failed files.
 
----
+## Install
 
-## 🛠️ How It Works (Reverse Engineering Canvas Course Downloader)
+1. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`).
+2. Turn on **Developer mode**.
+3. Click **Load unpacked** and choose this folder.
+4. Pin the extension to your toolbar.
 
-We reverse-engineered [`canvas-course-downloader`](https://github.com/jasp-nerd/canvas-course-downloader) to understand its architectural strengths:
+## Use
 
-1. **Manifest V3 Content Script & Background Worker:**
-   Instead of brittle external scraping scripts, the extension runs within your logged-in browser tab. It leverages your authenticated session cookies (`JSESSIONID`, `s_session_id`) automatically.
-2. **Streaming Client-Side ZIP (`client-zip`):**
-   Rather than buffering gigabytes of slides into RAM with JSZip, it streams chunks directly through an asynchronous generator to generate the final ZIP archive without tab crashes.
-3. **HTML-to-Markdown Pipeline (`turndown`):**
-   Converts LMS rich text into clean Markdown files ideal for Obsidian, Notion, NotebookLM, Claude, or ChatGPT.
-4. **Stateful Download Tracking:**
-   Tracks jobs through queued, downloading, and completed states using `chrome.downloads` and persists session data in `chrome.storage.session`.
+- **One course:** open a course, then click **Download Course Content** next to the title, or open the popup and click **Download course files**.
+- **Several courses:** open your Blackboard home or course list, click **Download Courses** (or use the popup), tick the courses and click **Download Selected Courses**.
 
-### Adapting to Blackboard Learn
-While Canvas LMS uses `/api/v1/courses/...`, Blackboard uses a distinct structure:
-- **Course Enrollment & Discovery:** `GET /learn/api/public/v1/users/me` & `GET /learn/api/public/v1/users/{userId}/courses`
-- **Content Tree Hierarchy:** `GET /learn/api/public/v1/courses/{courseId}/contents` and recursive calls to `.../contents/{contentId}/children`
-- **Attachments & WebDAV:** Attachments live under `.../contents/{contentId}/attachments/{attId}/download` or Content Collection WebDAV paths (`/bbcswebdav/...`)
-- **Announcements:** `GET /learn/api/public/v1/courses/{courseId}/announcements`
-- **Gradebook:** `GET /learn/api/public/v1/courses/{courseId}/gradebook/columns` & `GET /learn/api/public/v2/courses/{courseId}/gradebook/users/{userId}`
+## Settings
 
----
+Open them from the gear icon in the popup, or right-click the extension icon and choose Options. Press **Save Changes** to apply; **Reset to defaults** restores everything.
 
-## 🚀 Installation Guide
+| Setting | What it does |
+| :--- | :--- |
+| Download method | **Single ZIP** (`[Course].zip`) or **individual files** saved under `[Course]/...` in your Downloads folder. |
+| If a file already exists | Keep both (rename), overwrite, or ask each time. Applies to the saved ZIP or files. |
+| Original course files | Files uploaded by instructors (PDF, slides, documents, archives). |
+| Text notes & descriptions | Page text saved in `Course Notes/`. |
+| Course announcements | One file in `Announcements/`. |
+| Grades & feedback | `Grades/Grades.csv` and `Grades/Grades.md`. |
+| Notes format | Markdown or standalone HTML, used only for notes and announcements. |
+| Skip video files | Drops .mp4, .mov, .avi, .mkv, .webm, .m4v, .wmv. |
+| Maximum file size | Skips files larger than this many MB (0 = no limit). Needs the server to report the size. |
+| Folder prefix | Puts everything inside one extra folder, e.g. `Downloads/Fall2026/[Course]/...`. |
 
-1. Open your Chromium-based browser (Google Chrome, Microsoft Edge, Brave).
-2. Navigate to `chrome://extensions` (or `edge://extensions` in Edge).
-3. Toggle on **Developer mode** in the top right corner.
-4. Click **Load unpacked** in the top left.
-5. Select this folder:
-   ```
-   c:\Users\yassi\Desktop\blackboard_course_downloader
-   ```
-6. The extension is now installed! Pin it to your toolbar for quick access.
+At least one content type must stay selected.
 
----
+## Limitations
 
-## 📖 How to Use
+- In ZIP mode the archive is assembled in memory before it is saved, so a very large course (several GB) can fail. Use **individual files** for those.
+- Video links to external services (Panopto, Collaborate, YouTube) and quizzes are not downloaded.
+- The DOM fallback only sees what is on the current page.
 
-### 1. Download Current Course
-1. Open your university Blackboard portal and navigate inside any course outline or content page.
-2. Click the injected **"Download Course Content"** button next to the course title, or click the extension icon in your toolbar and press **"Download course files"**.
-3. The floating progress panel will display live status as files and materials are saved into a clean ZIP archive.
+## Privacy
 
-### 2. Batch Download Multiple Courses
-1. Navigate to your Blackboard dashboard or course catalog (`/ultra/course` or portal home).
-2. Click **"Download Courses"** or open the extension popup.
-3. The **Course Selector Modal** will appear, grouping your courses by semester/term.
-4. Select the courses you wish to download and click **"Download Selected Courses"**.
-
----
-
-## ⚙️ Customization & Settings
-
-Right-click the extension icon and select **Options** (or click the gear icon in the popup) to configure:
-- **Package Mode:** Single ZIP archive vs Individual downloaded files & folders.
-- **Included Content:** Toggle Files, Pages/Notes, Announcements, and Grades.
-- **Format:** Choose between Markdown (`.md`) and HTML (`.html`).
-- **Video Filter:** Option to skip video files to save bandwidth and storage.
-- **Folder Prefix:** Set a custom folder name (e.g., `Fall2026/`) for organized file management.
-
----
-
-## 🔒 Privacy & Security
-
-- **100% Client-Side:** No credentials, tokens, or files are ever transmitted to any external server or third party.
-- **Local Network Only:** All network requests are made directly between your browser and your university's Blackboard server.
+All requests go directly between your browser and your Blackboard server. There is no analytics and no external service.

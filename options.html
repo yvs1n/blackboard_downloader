@@ -20,7 +20,10 @@
           <p class="subtitle">Configure download presets, content types, and archiving formats</p>
         </div>
       </div>
-      <button id="saveBtn" class="save-btn">Save Changes</button>
+      <div class="header-actions">
+        <button id="resetBtn" class="reset-btn" type="button">Reset to defaults</button>
+        <button id="saveBtn" class="save-btn" type="button">Save Changes</button>
+      </div>
     </header>
 
     <main class="settings-main">
@@ -44,6 +47,15 @@
               <span>Downloads files directly into your browser's Downloads directory under <code>[Course_Name]/...</code>.</span>
             </div>
           </label>
+        </div>
+
+        <div class="form-row">
+          <label for="conflictAction">If a file with the same name already exists on disk:</label>
+          <select id="conflictAction" class="select-input">
+            <option value="uniquify">Keep both (add a number to the new file)</option>
+            <option value="overwrite">Overwrite the old file</option>
+            <option value="prompt">Ask me each time</option>
+          </select>
         </div>
       </section>
 
@@ -81,9 +93,19 @@
             <input type="checkbox" id="typeGrades">
             <div>
               <strong>Grades & Feedback</strong>
-              <span>Export your course grades as a spreadsheet (<code>Grades.csv</code>).</span>
+              <span>Export your grades as a spreadsheet (<code>Grades/Grades.csv</code>) plus a readable copy (<code>Grades/Grades.md</code>).</span>
             </div>
           </label>
+        </div>
+        <p id="contentError" class="error-text" style="display:none;">Select at least one type of content to download.</p>
+
+        <div class="form-row" id="formatRow">
+          <label for="exportFormat">Format for notes and announcements:</label>
+          <select id="exportFormat" class="select-input">
+            <option value="md">Markdown (.md) — For Obsidian, Notion, NotebookLM, AI</option>
+            <option value="html">Standalone Webpage (.html)</option>
+          </select>
+          <span class="help-text" id="formatHelp">Used only when "Text Notes" or "Course Announcements" is selected.</span>
         </div>
       </section>
 
@@ -95,28 +117,20 @@
         <div class="form-row checkbox-row">
           <label class="inline-checkbox">
             <input type="checkbox" id="excludeVideos">
-            <span><strong>Exclude large video files</strong> (.mp4, .mov, .avi) to keep downloads fast and save disk space.</span>
+            <span><strong>Skip video files</strong> (.mp4, .mov, .avi, .mkv, .webm, .m4v, .wmv) to keep downloads fast and save disk space.</span>
           </label>
         </div>
 
         <div class="form-row">
           <label for="maxFileSizeMB">Maximum file size in MB (0 = no limit):</label>
           <input type="number" id="maxFileSizeMB" class="text-input" min="0" step="1" value="0">
-          <span class="help-text">Files larger than this are skipped.</span>
+          <span class="help-text">Files larger than this are skipped (only when the server reports the size).</span>
         </div>
 
         <div class="form-row">
           <label for="folderPrefix">Download Folder Prefix (optional):</label>
           <input type="text" id="folderPrefix" class="text-input" placeholder="e.g. University_2026">
-          <span class="help-text">Prepends a folder name to your downloads for clean semester organization.</span>
-        </div>
-
-        <div class="form-row">
-          <label for="exportFormat">Document Format for Notes/Announcements:</label>
-          <select id="exportFormat" class="select-input">
-            <option value="md">Markdown (.md) — For Obsidian, Notion, NotebookLM, AI</option>
-            <option value="html">Standalone Webpage (.html)</option>
-          </select>
+          <span class="help-text">Puts everything inside this folder in your Downloads directory, e.g. <code>Downloads/University_2026/[Course_Name]...</code>.</span>
         </div>
       </section>
     </main>
