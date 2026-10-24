@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const exportFormat = document.getElementById("exportFormat");
   const excludeVideos = document.getElementById("excludeVideos");
   const folderPrefix = document.getElementById("folderPrefix");
+  const maxFileSizeMB = document.getElementById("maxFileSizeMB");
   const saveBtn = document.getElementById("saveBtn");
   const saveToast = document.getElementById("saveToast");
 
@@ -27,7 +28,9 @@ document.addEventListener("DOMContentLoaded", () => {
     exportFormat: "md",
     excludeVideos: false,
     folderPrefix: "",
+    maxFileSizeMB: 0,
   }, (items) => {
+    maxFileSizeMB.value = items.maxFileSizeMB || 0;
     if (items.zipMode) {
       zipModeTrue.checked = true;
     } else {
@@ -57,6 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
       exportFormat: exportFormat.value,
       excludeVideos: excludeVideos.checked,
       folderPrefix: folderPrefix.value.trim(),
+      maxFileSizeMB: Math.max(0, Number(maxFileSizeMB.value) || 0),
     };
 
     chrome.storage.sync.set(newSettings, () => {

@@ -88,8 +88,8 @@ function extractFilenameFromHeaders(headers, fallbackName = "file") {
 
   let finalName = extracted || fallbackName;
 
-  // If the filename still lacks an extension, attempt to infer it from Content-Type
-  if (!finalName.includes(".")) {
+  // If the filename still lacks a real extension, attempt to infer it from Content-Type
+  if (!/\.[A-Za-z0-9]{1,5}$/.test(finalName)) {
     const ct = (typeof headers.get === "function" ? headers.get("content-type") : headers["content-type"]) || "";
     const ext = mimeToExt(ct);
     if (ext) finalName += ext;
@@ -114,7 +114,46 @@ function sanitizeFilename(name) {
     .replace(/[. ]+$/, "")                                            // trailing dots/spaces
     .replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i, "_$1$2") // Windows reserved names
     .trim();
-  return cleaned || "untitled";
+  return truncateName(cleaned) || "untitled";
+}
+
+/** Caps a name at maxLen characters while preserving a short file extension. */
+function truncateName(name, maxLen = 120) {
+  if (name.length <= maxLen) return name;
+  const m = name.match(/\.[A-Za-z0-9]{1,5}$/);
+  const ext = m ? m[0] : "";
+  return name.slice(0, maxLen - ext.length).replace(/[. ]+$/, "") + ext;
+}
+
+/** Escapes text for safe interpolation into HTML. */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Makes a name unique within a set by appending " (n)" before the extension. */
+function uniqueName(fullPath, usedSet) {
+  const key = (p) => p.toLowerCase();
+  if (!usedSet.has(key(fullPath))) {
+    usedSet.add(key(fullPath));
+    return fullPath;
+  }
+  const dot = fullPath.lastIndexOf(".");
+  const slash = fullPath.lastIndexOf("/");
+  const hasExt = dot > slash + 1;
+  const base = hasExt ? fullPath.slice(0, dot) : fullPath;
+  const ext = hasExt ? fullPath.slice(dot) : "";
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})${ext}`;
+    if (!usedSet.has(key(candidate))) {
+      usedSet.add(key(candidate));
+      return candidate;
+    }
+  }
 }
 
 /** Formats bytes to human-readable size string. */
@@ -267,38 +306,43 @@ function inferTerm(courseCode = "", fallback = "Current Term") {
 // Grades Exporters
 // ---------------------------------------------------------------------------
 
-function exportGradesCsv(columns = [], userGrades = []) {
+function buildGradeMap(userGrades) {
+  const list = Array.isArray(userGrades) ? userGrades : (Array.isArray(userGrades?.results) ? userGrades.results : []);
   const gradeMap = new Map();
-  for (const g of userGrades) {
-    if (g.columnId) gradeMap.set(g.columnId, g);
+  for (const g of list) {
+    if (g && g.columnId) gradeMap.set(g.columnId, g);
   }
+  return gradeMap;
+}
 
-  const rows = [["Item Name", "Score", "Points Possible", "Status", "Feedback"]];
+/** Quotes a CSV cell and neutralizes spreadsheet formula injection. */
+function csvCell(value) {
+  let s = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function exportGradesCsv(columns = [], userGrades = []) {
+  const gradeMap = buildGradeMap(userGrades);
+
+  const rows = [["Item Name", "Score", "Points Possible", "Status", "Feedback"].map(csvCell)];
   for (const col of columns) {
     const g = gradeMap.get(col.id) || {};
     const title = col.name || col.displayName || "Untitled Column";
     const score = g.displayGrade ?? g.score ?? "";
     const possible = col.score?.possible ?? col.pointsPossible ?? "";
-    const status = g.status || "Graded";
+    const status = g.status || (score === "" ? "Not graded" : "Graded");
     const feedback = (g.feedback || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-    rows.push([
-      `"${title.replace(/"/g, '""')}"`,
-      `"${String(score).replace(/"/g, '""')}"`,
-      `"${String(possible).replace(/"/g, '""')}"`,
-      `"${String(status).replace(/"/g, '""')}"`,
-      `"${feedback.replace(/"/g, '""')}"`
-    ]);
+    rows.push([title, score, possible, status, feedback].map(csvCell));
   }
 
-  return rows.map(r => r.join(",")).join("\n");
+  // UTF-8 BOM so Excel decodes non-ASCII text correctly
+  return "﻿" + rows.map(r => r.join(",")).join("\r\n");
 }
 
 function exportGradesMarkdown(columns = [], userGrades = [], courseName = "") {
-  const gradeMap = new Map();
-  for (const g of userGrades) {
-    if (g.columnId) gradeMap.set(g.columnId, g);
-  }
+  const gradeMap = buildGradeMap(userGrades);
 
   let md = `# Grades — ${courseName || "Course"}\n\n`;
   md += "| Item | Score | Points Possible | Status | Feedback |\n";
@@ -309,7 +353,8 @@ function exportGradesMarkdown(columns = [], userGrades = [], courseName = "") {
     const title = (col.name || col.displayName || "Untitled").replace(/\|/g, "\\|");
     const score = String(g.displayGrade ?? g.score ?? "—").replace(/\|/g, "\\|");
     const possible = String(col.score?.possible ?? col.pointsPossible ?? "—").replace(/\|/g, "\\|");
-    const status = (g.status || "Graded").replace(/\|/g, "\\|");
+    const hasScore = (g.displayGrade ?? g.score) != null;
+    const status = (g.status || (hasScore ? "Graded" : "Not graded")).replace(/\|/g, "\\|");
     const feedback = (g.feedback || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim() || "—";
 
     md += `| ${title} | ${score} | ${possible} | ${status} | ${feedback} |\n`;

@@ -12,6 +12,10 @@ const MAX_RETRIES = 3;
 function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
@@ -19,6 +23,7 @@ async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetchWithTimeout(url, options);
+      if (res.status === 401 || res.status === 403) apiAuthFailed = true;
       if (res.ok || (res.status < 500 && res.status !== 429)) return res;
       if (attempt === retries) return res;
 
@@ -26,12 +31,29 @@ async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
       console.warn(`[Blackboard Downloader] ${res.status} on ${url}, retrying in ${delay}ms...`);
       await new Promise(r => setTimeout(r, delay));
     } catch (err) {
-      if (attempt === retries) throw err;
+      if (attempt === retries || options.signal?.aborted) throw err;
       const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
       console.warn(`[Blackboard Downloader] Network error on ${url}, retrying in ${delay}ms...`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
+}
+
+/** Set when the API answers 401/403, so callers can tell "expired session" from "empty course". */
+let apiAuthFailed = false;
+
+/** Runs `fn` over `items` with at most `limit` in flight. */
+async function mapPool(items, limit, fn) {
+  const results = new Array(items.length);
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 async function fetchAllPages(url, options = {}) {
@@ -41,12 +63,14 @@ async function fetchAllPages(url, options = {}) {
 
   while (next) {
     try {
+      const { headers, ...rest } = options;
       const res = await fetchWithRetry(next, {
-        headers: { Accept: "application/json", ...options.headers },
-        ...options
+        ...rest,
+        headers: { Accept: "application/json", ...headers }
       });
 
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) apiAuthFailed = true;
         console.warn(`[Blackboard Downloader] API ${res.status} on ${next}`);
         break;
       }
@@ -197,36 +221,58 @@ async function fetchAllCourses() {
   const courses = [];
   const seenIds = new Set();
 
-  for (const enr of enrollments) {
-    const rawId = enr.courseId;
-    if (!rawId || seenIds.has(rawId)) continue;
-    seenIds.add(rawId);
+  const uniqueEnrollments = enrollments.filter((enr) => {
+    if (!enr.courseId || seenIds.has(enr.courseId)) return false;
+    seenIds.add(enr.courseId);
+    return true;
+  });
 
+  const termCache = new Map();
+  async function resolveTermName(termId) {
+    if (!termId) return null;
+    if (!termCache.has(termId)) {
+      termCache.set(termId, (async () => {
+        try {
+          const res = await fetchWithRetry(`${domain}/learn/api/public/v1/terms/${termId}`, {
+            headers: { Accept: "application/json" }
+          });
+          if (res.ok) return (await res.json()).name || null;
+        } catch {
+          // Terms endpoint may be restricted for students
+        }
+        return null;
+      })());
+    }
+    return termCache.get(termId);
+  }
+
+  const built = await mapPool(uniqueEnrollments, 5, async (enr) => {
+    const rawId = enr.courseId;
     const detail = await fetchCourseDetails(rawId);
     if (detail) {
       const code = detail.courseId || "";
       const name = detail.name || "Untitled Course";
-      const termName = detail.term?.name || inferTerm(code, "Current Term");
+      const termName = detail.term?.name || (await resolveTermName(detail.termId)) || inferTerm(code, "Current Term");
 
-      courses.push({
+      return {
         id: rawId,
         name: name,
         safeName: sanitizeFilename(name),
         courseCode: code,
         term: termName,
         isCompleted: enr.enrollmentStatus === "Completed" || detail.status === "Closed"
-      });
-    } else {
-      courses.push({
-        id: rawId,
-        name: `Course ${rawId}`,
-        safeName: sanitizeFilename(`Course ${rawId}`),
-        courseCode: rawId,
-        term: "Current Term",
-        isCompleted: false
-      });
+      };
     }
-  }
+    return {
+      id: rawId,
+      name: `Course ${rawId}`,
+      safeName: sanitizeFilename(`Course ${rawId}`),
+      courseCode: rawId,
+      term: "Current Term",
+      isCompleted: false
+    };
+  });
+  courses.push(...built);
 
   // Fallback 1: Query public courses API
   if (courses.length === 0) {
@@ -367,20 +413,26 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
 
     onStatus(`Scanning: ${title}`);
 
-    // Fetch node detail
+    // Fetch node detail only when the list entry lacks a body (saves a request per node)
     let detail = null;
-    try {
-      const detailRes = await fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}`);
-      if (detailRes.ok) {
-        detail = await detailRes.json();
+    if (!isFolder && node.body == null) {
+      try {
+        const detailRes = await fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}`);
+        if (detailRes.ok) {
+          detail = await detailRes.json();
+        } else if (detailRes.status === 401 || detailRes.status === 403) {
+          apiAuthFailed = true;
+        }
+      } catch (err) {
+        console.warn(`[Blackboard Downloader] Could not fetch detail for ${node.id}:`, err);
       }
-    } catch (err) {
-      console.warn(`[Blackboard Downloader] Could not fetch detail for ${node.id}:`, err);
     }
 
     // 1. Direct File Attachments endpoint (most common for slides, PDFs, problem sets)
     try {
-      const attRes = await fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/attachments`);
+      const attRes = await (handlerId.includes("folder")
+        ? Promise.resolve({ ok: false })
+        : fetchWithRetry(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/attachments`));
       if (attRes.ok) {
         const attData = await attRes.json();
         const results = Array.isArray(attData.results) ? attData.results : (Array.isArray(attData) ? attData : []);
@@ -439,9 +491,7 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
       try {
         const children = await fetchAllPages(`${domain}/learn/api/public/v1/courses/${courseId}/contents/${node.id}/children?limit=100`);
         if (Array.isArray(children) && children.length > 0) {
-          for (const child of children) {
-            await processNode(child, childPath);
-          }
+          await mapPool(children, 4, (child) => processNode(child, childPath));
         }
       } catch (err) {
         console.warn(`[Blackboard Downloader] Could not fetch children for ${node.id}:`, err);
@@ -453,9 +503,7 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
   try {
     const topLevel = await fetchAllPages(`${domain}/learn/api/public/v1/courses/${courseId}/contents?limit=100`);
     if (Array.isArray(topLevel)) {
-      for (const item of topLevel) {
-        await processNode(item, "");
-      }
+      await mapPool(topLevel, 4, (item) => processNode(item, ""));
     }
   } catch (err) {
     console.error("[Blackboard Downloader] Failed to fetch top level contents:", err);
@@ -468,7 +516,7 @@ async function fetchCourseContentTree(courseId, onStatus = () => {}) {
       onStatus("Scanning course resource files...");
       for (const res of resources) {
         if (res.type === "File" || (!res.type && res.name && res.name.includes("."))) {
-          const dlUrl = res.downloadUrl || `${domain}/learn/api/public/v1/courses/${courseId}/resources/${res.id}`;
+          const dlUrl = res.downloadUrl || `${domain}/learn/api/public/v1/courses/${courseId}/resources/${res.id}/download`;
           addFile({
             filename: sanitizeFilename(res.name || "resource"),
             url: dlUrl,

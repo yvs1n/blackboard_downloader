@@ -48,20 +48,16 @@ function isBlackboard() {
   const path = window.location.pathname;
 
   // Obvious domain / path signals
-  if (
-    host.includes("blackboard") ||
-    host.includes("bb.") ||
-    host.startsWith("bb-") ||
-    host.includes("learn.")
-  ) {
+  if (/(^|\.)blackboard\./i.test(host) || /^bb[.-]/i.test(host) || host.includes("blackboard")) {
     return true;
   }
 
   if (
-    path.startsWith("/ultra") ||
-    path.startsWith("/webapps") ||
-    path.includes("/ultra/") ||
-    path.includes("/webapps/")
+    path.startsWith("/ultra/") ||
+    path === "/ultra" ||
+    path.startsWith("/webapps/blackboard") ||
+    path.startsWith("/webapps/portal") ||
+    path.startsWith("/webapps/login")
   ) {
     return true;
   }
@@ -98,8 +94,10 @@ function getCourseId() {
 
   // Original: ?course_id=_12345_1 or &course_id=_12345_1
   const params = new URLSearchParams(search);
-  const courseIdParam = params.get("course_id") || params.get("id");
+  const courseIdParam = params.get("course_id");
   if (courseIdParam) return courseIdParam;
+  const genericId = params.get("id");
+  if (genericId && /^_\d+_\d+$/.test(genericId) && path.includes("/webapps/")) return genericId;
 
   // DOM fallback: hidden input or link containing course_id
   const inputEl = document.querySelector('input[name="course_id"], input[id="course_id"]');
@@ -130,7 +128,7 @@ function getCourseName() {
   // Page title tag fallback (e.g. "Intro to CS - Blackboard Learn")
   const docTitle = document.title;
   if (docTitle) {
-    const clean = docTitle.split(/[-–—|:]/)[0].trim();
+    const clean = docTitle.split(/\s[-–—|:]\s|\s*\|\s*/)[0].trim();
     if (clean && !clean.toLowerCase().includes("blackboard")) {
       return clean;
     }

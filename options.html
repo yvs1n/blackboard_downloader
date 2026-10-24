@@ -100,6 +100,12 @@
         </div>
 
         <div class="form-row">
+          <label for="maxFileSizeMB">Maximum file size in MB (0 = no limit):</label>
+          <input type="number" id="maxFileSizeMB" class="text-input" min="0" step="1" value="0">
+          <span class="help-text">Files larger than this are skipped.</span>
+        </div>
+
+        <div class="form-row">
           <label for="folderPrefix">Download Folder Prefix (optional):</label>
           <input type="text" id="folderPrefix" class="text-input" placeholder="e.g. University_2026">
           <span class="help-text">Prepends a folder name to your downloads for clean semester organization.</span>

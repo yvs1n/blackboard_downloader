@@ -40,8 +40,9 @@ function showToast(message, type = "info") {
         <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/>
       </svg>
     </span>
-    <span style="flex:1;line-height:1.4;">${message}</span>
+    <span id="bb-toast-msg" style="flex:1;line-height:1.4;"></span>
   `;
+  toast.querySelector("#bb-toast-msg").textContent = String(message);
 
   document.body.appendChild(toast);
   requestAnimationFrame(() => {
@@ -132,21 +133,55 @@ function createDownloadPanel() {
     panel.style.display = "none";
   });
 
-  panel.querySelector("#bb-panel-cancel").addEventListener("click", () => {
+  panel.querySelector("#bb-panel-cancel").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    if (btn.dataset.mode === "dismiss") {
+      panel.style.display = "none";
+      return;
+    }
     downloadCancelled = true;
     panel.querySelector("#bb-panel-current").textContent = "Cancelling...";
-    panel.querySelector("#bb-panel-cancel").disabled = true;
+    btn.disabled = true;
+    chrome.runtime.sendMessage({ type: "CANCEL_DOWNLOADS" }, () => {
+      const _ = chrome.runtime.lastError;
+    });
   });
 
   return panel;
 }
 
+/**
+ * Restores the panel to its initial "starting" look for a new download run.
+ * With hide = true the panel is hidden afterwards.
+ */
+function resetDownloadPanel(hide = false) {
+  const panel = createDownloadPanel();
+  panel.querySelector("#bb-panel-title").textContent = "Downloading Course...";
+  panel.querySelector("#bb-panel-current").textContent = "Starting...";
+  panel.querySelector("#bb-panel-bar").style.width = "0%";
+  panel.querySelector("#bb-panel-pct").textContent = "0%";
+  panel.querySelector("#bb-panel-stats").textContent = "0 / 0";
+  const btn = panel.querySelector("#bb-panel-cancel");
+  btn.textContent = "Cancel";
+  btn.disabled = false;
+  btn.dataset.mode = "cancel";
+  panel.querySelector("#bb-panel-failed-section").style.display = "none";
+  panel.querySelector("#bb-panel-body").style.display = "block";
+  panel.style.display = hide ? "none" : "block";
+}
+
 function updateDownloadPanel(status) {
   if (!downloadPanel) return;
 
-  const { total, completed, failed, queued, currentFile, failedFiles, done, cancelled } = status;
+  const { total, completed, failed, queued, currentFile, failedFiles, done, cancelled, scanning } = status;
   const processed = (completed || 0) + (failed || 0);
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+
+  if (scanning) {
+    const cur = downloadPanel.querySelector("#bb-panel-current");
+    if (cur) cur.textContent = scanning;
+    return;
+  }
 
   const bar = downloadPanel.querySelector("#bb-panel-bar");
   const pctEl = downloadPanel.querySelector("#bb-panel-pct");
@@ -161,6 +196,12 @@ function updateDownloadPanel(status) {
   if (cancelled) {
     if (titleEl) titleEl.textContent = "Download Cancelled";
     if (currentEl) currentEl.textContent = "Operation was stopped.";
+    const cancelBtn = downloadPanel.querySelector("#bb-panel-cancel");
+    if (cancelBtn) {
+      cancelBtn.textContent = "Dismiss";
+      cancelBtn.disabled = false;
+      cancelBtn.dataset.mode = "dismiss";
+    }
     return;
   }
 
@@ -168,8 +209,11 @@ function updateDownloadPanel(status) {
     if (titleEl) titleEl.textContent = "Download Complete!";
     if (currentEl) currentEl.textContent = `Finished: ${completed} saved${failed > 0 ? `, ${failed} failed` : ""}.`;
     const cancelBtn = downloadPanel.querySelector("#bb-panel-cancel");
-    if (cancelBtn) cancelBtn.textContent = "Dismiss";
-    if (cancelBtn) cancelBtn.onclick = () => (downloadPanel.style.display = "none");
+    if (cancelBtn) {
+      cancelBtn.textContent = "Dismiss";
+      cancelBtn.disabled = false;
+      cancelBtn.dataset.mode = "dismiss";
+    }
   } else if (currentFile) {
     if (currentEl) currentEl.textContent = `Downloading: ${currentFile}`;
   }
@@ -182,7 +226,7 @@ function updateDownloadPanel(status) {
     if (failSec) failSec.style.display = "block";
     if (failCount) failCount.textContent = String(failedFiles.length);
     if (failList) {
-      failList.innerHTML = failedFiles.map(f => `<div>• ${typeof f === "string" ? f : f.filename}</div>`).join("");
+      failList.innerHTML = failedFiles.map(f => `<div>• ${escapeHtml(typeof f === "string" ? f : f.filename)}</div>`).join("");
     }
   }
 }
@@ -240,6 +284,21 @@ async function openCourseSelector() {
 
   document.body.appendChild(overlay);
 
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Blackboard Course Downloader");
+  const onKey = (e) => {
+    if (e.key === "Escape") overlay.remove();
+  };
+  document.addEventListener("keydown", onKey);
+  new MutationObserver((_, obs) => {
+    if (!overlay.isConnected) {
+      document.removeEventListener("keydown", onKey);
+      obs.disconnect();
+    }
+  }).observe(document.body, { childList: true });
+  overlay.querySelector("#bb-search-input").focus();
+
   overlay.querySelector("#bb-modal-close").addEventListener("click", () => overlay.remove());
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.remove();
@@ -280,16 +339,16 @@ async function openCourseSelector() {
     let html = "";
     for (const [term, group] of termMap.entries()) {
       html += `<div class="bb-term-group" style="margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">${term}</div>
+        <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">${escapeHtml(term)}</div>
         <div style="display:flex;flex-direction:column;gap:6px;">`;
 
       for (const course of group) {
         html += `
-          <label class="bb-course-row" data-search="${(course.name + " " + course.courseCode).toLowerCase()}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;transition:background 0.12s;">
-            <input type="checkbox" data-id="${course.id}" data-name="${course.name}" style="width:16px;height:16px;accent-color:#0284c7;cursor:pointer;">
+          <label class="bb-course-row" data-search="${escapeHtml((course.name + " " + course.courseCode).toLowerCase())}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;transition:background 0.12s;">
+            <input type="checkbox" data-id="${escapeHtml(course.id)}" data-name="${escapeHtml(course.name)}" style="width:16px;height:16px;accent-color:#0284c7;cursor:pointer;">
             <div style="flex:1;min-width:0;">
-              <div style="font-size:14px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${course.name}</div>
-              <div style="font-size:11.5px;color:#64748b;">${course.courseCode || course.id}</div>
+              <div style="font-size:14px;font-weight:600;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(course.name)}</div>
+              <div style="font-size:11.5px;color:#64748b;">${escapeHtml(course.courseCode || course.id)}</div>
             </div>
           </label>`;
       }
@@ -309,7 +368,10 @@ async function openCourseSelector() {
     });
 
     overlay.querySelector("#bb-deselect-all").addEventListener("click", () => {
-      listEl.querySelectorAll("input[type='checkbox']").forEach(cb => cb.checked = false);
+      listEl.querySelectorAll("input[type='checkbox']").forEach(cb => {
+        const row = cb.closest(".bb-course-row");
+        if (row && row.style.display !== "none") cb.checked = false;
+      });
       updateSelectedCount();
     });
 
@@ -337,17 +399,28 @@ async function openCourseSelector() {
       showToast(`Starting batch download for ${selected.length} courses...`, "info");
       const domain = window.location.origin;
 
+      let ok = 0;
+      const errored = [];
+      let stopped = false;
       for (let i = 0; i < selected.length; i++) {
-        if (downloadCancelled) break;
         const c = selected[i];
         showToast(`Processing course ${i + 1}/${selected.length}: ${c.name}`, "info");
         try {
-          await downloadCourse(c.id, c.name, domain);
+          const result = await downloadCourse(c.id, c.name, domain);
+          if (result?.cancelled) { stopped = true; break; }
+          ok++;
         } catch (err) {
           console.error(`[Blackboard Downloader] Batch error on ${c.name}:`, err);
+          errored.push(c.name);
         }
       }
-      showToast("Batch downloads completed!", "success");
+      if (stopped) {
+        showToast(`Batch cancelled after ${ok} of ${selected.length} courses.`, "info");
+      } else if (errored.length) {
+        showToast(`Batch finished: ${ok} succeeded, ${errored.length} failed (${errored.join(", ")}).`, "error");
+      } else {
+        showToast("Batch downloads completed!", "success");
+      }
     });
 
   } catch (err) {

@@ -58,8 +58,10 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
     }
   }, 100);
 
+  const usedPaths = new Set();
+  const maxBytes = (settings.maxFileSizeMB || 0) * 1024 * 1024;
+
   async function* fileSource() {
-    const now = new Date();
     for (const item of items) {
       if (activeAbortController.signal.aborted) return;
 
@@ -78,6 +80,7 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
       try {
         let input;
         let resolvedFilename = item.filename;
+        let lastModified = new Date();
 
         if (item.data) {
           // Pre-generated text / CSV content
@@ -87,8 +90,16 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
             input = item.data;
           }
         } else if (item.url) {
-          const res = await fetch(item.url, { signal: activeAbortController.signal });
+          const res = await fetchWithRetry(item.url, { signal: activeAbortController.signal });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          if (maxBytes > 0) {
+            const len = Number(res.headers.get("content-length"));
+            if (len > maxBytes) {
+              res.body?.cancel();
+              throw new Error(`Larger than ${settings.maxFileSizeMB} MB limit`);
+            }
+          }
 
           // Extract the exact filename from Content-Disposition headers
           const headerName = extractFilenameFromHeaders(res.headers, item.filename);
@@ -96,16 +107,22 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
             resolvedFilename = headerName;
           }
 
+          if (settings.excludeVideos && isVideoName(resolvedFilename)) continue;
+
           input = res.body;
+          const lm = Date.parse(res.headers.get("last-modified") || "");
+          if (!Number.isNaN(lm)) lastModified = new Date(lm);
         }
 
-        const fullPath = `${item.path}${resolvedFilename}`;
-        completed++;
+        if (input === undefined) throw new Error("No content");
+
+        const fullPath = uniqueName(`${item.path}${resolvedFilename}`, usedPaths);
         yield {
           name: fullPath,
           input,
-          lastModified: now,
+          lastModified,
         };
+        completed++;
       } catch (err) {
         if (err && err.name === "AbortError") return;
         console.warn(`[Blackboard Downloader] Failed to fetch ${item.filename}:`, err);
@@ -113,6 +130,10 @@ async function downloadAsZip(items, courseName, settings, log = () => {}) {
         failedFiles.push(item.filename);
       }
     }
+  }
+
+  function isVideoName(name) {
+    return /\.(mp4|mov|avi|mkv)$/i.test(name);
   }
 
   log("Building ZIP archive (streaming)...");
@@ -200,18 +221,74 @@ async function downloadDirect(items, courseName, settings, log = () => {}) {
 
   createDownloadPanel();
 
-  const preparedFiles = [];
-  for (const item of items) {
-    let url = item.url;
+  const maxBytes = (settings.maxFileSizeMB || 0) * 1024 * 1024;
+  const usedPaths = new Set();
+  const blobUrls = [];
+  const abort = new AbortController();
+  activeAbortController = abort;
+  const cancelWatch = setInterval(() => {
+    if (downloadCancelled) abort.abort();
+  }, 100);
+
+  // Resolve real filenames (Content-Disposition) up front, like ZIP mode does.
+  let completedSoFar = 0;
+  const resolved = await mapPool(items, 5, async (item) => {
+    if (abort.signal.aborted) return null;
     if (item.data) {
-      const blob = new Blob([item.data], { type: "text/plain;charset=utf-8" });
-      url = URL.createObjectURL(blob);
+      const type = item.filename.endsWith(".csv") ? "text/csv;charset=utf-8" : "text/plain;charset=utf-8";
+      const url = URL.createObjectURL(new Blob([item.data], { type }));
+      blobUrls.push(url);
+      return { url, path: item.path, filename: item.filename };
     }
-    preparedFiles.push({
-      url,
-      path: `${baseFolder}${item.path}`,
-      filename: item.filename,
+
+    let filename = item.filename;
+    try {
+      const res = await fetchWithRetry(item.url, { signal: abort.signal });
+      if (res.ok) {
+        filename = extractFilenameFromHeaders(res.headers, item.filename) || filename;
+        const len = Number(res.headers.get("content-length"));
+        res.body?.cancel();
+        if (maxBytes > 0 && len > maxBytes) return null;
+      }
+    } catch (err) {
+      if (err && err.name === "AbortError") return null;
+      // Fall back to the provisional name if the header probe fails
+    }
+    if (settings.excludeVideos && /\.(mp4|mov|avi|mkv)$/i.test(filename)) return null;
+    updateDownloadPanel({
+      total: items.length, completed: ++completedSoFar, failed: 0, queued: 0, downloading: 1,
+      currentFile: `Preparing: ${filename}`, failedFiles: [], done: false, cancelled: false,
     });
+    return { url: item.url, path: item.path, filename };
+  });
+  clearInterval(cancelWatch);
+
+  if (downloadCancelled) {
+    blobUrls.forEach((u) => URL.revokeObjectURL(u));
+    updateDownloadPanel({
+      total: items.length, completed: 0, failed: 0, queued: 0, downloading: 0,
+      currentFile: null, failedFiles: [], done: true, cancelled: true,
+    });
+    return { cancelled: true };
+  }
+
+  const preparedFiles = [];
+  for (const r of resolved) {
+    if (!r) continue;
+    const unique = uniqueName(`${baseFolder}${r.path}${r.filename}`, usedPaths);
+    const slash = unique.lastIndexOf("/");
+    preparedFiles.push({
+      url: r.url,
+      path: unique.slice(0, slash + 1),
+      filename: unique.slice(slash + 1),
+    });
+  }
+
+  if (blobUrls.length) setTimeout(() => blobUrls.forEach((u) => URL.revokeObjectURL(u)), 10 * 60 * 1000);
+
+  if (preparedFiles.length === 0) {
+    showToast("No files left to download after applying your filters.", "info");
+    return { cancelled: false, count: 0 };
   }
 
   return new Promise((resolve, reject) => {
@@ -245,6 +322,15 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
   const settings = await loadSettings();
   const types = settings.contentTypes;
   downloadCancelled = false;
+  apiAuthFailed = false;
+
+  // Show the panel right away so the user sees scanning progress
+  resetDownloadPanel();
+  const baseProgress = onProgress;
+  onProgress = (msg) => {
+    updateDownloadPanel({ scanning: msg, total: 0, completed: 0, failed: 0, queued: 0, done: false, cancelled: false });
+    baseProgress(msg);
+  };
 
   onProgress("Scanning course contents and folders...");
 
@@ -262,15 +348,9 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
       files.push(...scraped);
     }
 
-    // Add real uploaded files
+    // Add real uploaded files (video filtering happens once real filenames are known)
     if (types.files) {
       for (const f of files) {
-        if (settings.excludeVideos) {
-          const lower = f.filename.toLowerCase();
-          if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".avi") || lower.endsWith(".mkv")) {
-            continue;
-          }
-        }
         allItems.push(f);
       }
     }
@@ -278,7 +358,7 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
     // Add page notes ONLY if explicitly requested in settings
     if (types.pages && pages.length > 0) {
       for (const p of pages) {
-        const content = settings.exportFormat === "html" ? p.html : htmlToMarkdown(p.html, p.title);
+        const content = settings.exportFormat === "html" ? sanitizeHtml(p.html) : htmlToMarkdown(p.html, p.title);
         const ext = settings.exportFormat === "html" ? ".html" : ".md";
         allItems.push({
           filename: `${sanitizeFilename(p.title)}${ext}`,
@@ -299,7 +379,7 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
       if (settings.exportFormat === "html") {
         docContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Announcements</title></head><body><h1>Announcements</h1>`;
         for (const a of announcements) {
-          docContent += `<hr><h2>${sanitizeFilename(a.title)}</h2><p><small>${a.created || ""}</small></p>${a.body}`;
+          docContent += `<hr><h2>${escapeHtml(a.title)}</h2><p><small>${escapeHtml(a.created || "")}</small></p>${sanitizeHtml(a.body)}`;
         }
         docContent += `</body></html>`;
       } else {
@@ -342,7 +422,12 @@ async function downloadCourse(courseId, courseName, domain, onProgress = () => {
   }
 
   if (allItems.length === 0) {
-    showToast("No course materials or files found in this course.", "info");
+    resetDownloadPanel(true);
+    if (apiAuthFailed) {
+      showToast("Blackboard denied access (401/403). Your session may have expired — refresh the page and sign in again.", "error");
+    } else {
+      showToast("No course materials or files found in this course.", "info");
+    }
     return { cancelled: false, count: 0 };
   }
 
